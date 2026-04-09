@@ -3,15 +3,33 @@ import { fetchTodayEventsRaw } from '@/lib/integrations/google-calendar'
 import { upsertSourceItem } from '@/lib/db/source-items'
 import { startSyncLog, completeSyncLog } from '@/lib/db/sync-log'
 
+async function getAccessToken(): Promise<string | null> {
+  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN
+  if (!refreshToken) return null
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: process.env.GOOGLE_CLIENT_ID!,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    }),
+  })
+  const data = await res.json() as { access_token?: string }
+  return data.access_token ?? null
+}
+
 // GET — returns today's events (used by useCalendar hook)
 export async function GET(_req: NextRequest) {
-  const accessToken = process.env.GOOGLE_ACCESS_TOKEN
   const refreshToken = process.env.GOOGLE_REFRESH_TOKEN
-
-  if (!accessToken) {
+  if (!refreshToken) {
     return NextResponse.json({ events: [], error: 'Google Calendar not configured' })
   }
-
+  const accessToken = await getAccessToken()
+  if (!accessToken) {
+    return NextResponse.json({ events: [], error: 'Failed to refresh Google access token' })
+  }
   const { events, error } = await fetchTodayEventsRaw(accessToken, refreshToken)
   return NextResponse.json({ events, error })
 }
@@ -19,18 +37,15 @@ export async function GET(_req: NextRequest) {
 // POST — sync calendar events as source items (for prep task detection)
 export async function POST(_req: NextRequest) {
   const logId = await startSyncLog('calendar')
-  const accessToken = process.env.GOOGLE_ACCESS_TOKEN
   const refreshToken = process.env.GOOGLE_REFRESH_TOKEN
-
-  if (!accessToken) {
-    await completeSyncLog(logId, {
-      status: 'failed',
-      itemsFound: 0,
-      tasksCreated: 0,
-      tasksUpdated: 0,
-      errorDetail: 'GOOGLE_ACCESS_TOKEN not set',
-    })
+  if (!refreshToken) {
+    await completeSyncLog(logId, { status: 'failed', itemsFound: 0, tasksCreated: 0, tasksUpdated: 0, errorDetail: 'GOOGLE_REFRESH_TOKEN not set' })
     return NextResponse.json({ error: 'Google Calendar not configured' }, { status: 503 })
+  }
+  const accessToken = await getAccessToken()
+  if (!accessToken) {
+    await completeSyncLog(logId, { status: 'failed', itemsFound: 0, tasksCreated: 0, tasksUpdated: 0, errorDetail: 'Token refresh failed' })
+    return NextResponse.json({ error: 'Failed to refresh Google access token' }, { status: 503 })
   }
 
   try {

@@ -7,12 +7,32 @@ import { getConfig } from '@/lib/db/config'
 import { detectActionItem } from '@/lib/intelligence/rules'
 import { extractIfNeeded } from '@/lib/intelligence/extractor'
 
-export async function POST(_req: NextRequest) {
-  const accessToken = process.env.GOOGLE_ACCESS_TOKEN
+async function getAccessToken(): Promise<string | null> {
   const refreshToken = process.env.GOOGLE_REFRESH_TOKEN
+  if (!refreshToken) return null
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: process.env.GOOGLE_CLIENT_ID!,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    }),
+  })
+  const data = await res.json() as { access_token?: string }
+  return data.access_token ?? null
+}
 
-  if (!accessToken) {
+export async function POST(_req: NextRequest) {
+  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN
+  if (!refreshToken) {
     return NextResponse.json({ error: 'Google credentials not configured' }, { status: 503 })
+  }
+
+  const accessToken = await getAccessToken()
+  if (!accessToken) {
+    return NextResponse.json({ error: 'Failed to refresh Google access token' }, { status: 503 })
   }
 
   const logId = await startSyncLog('gmail')
