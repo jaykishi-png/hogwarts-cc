@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getTask, updateTask, deleteTask } from '@/lib/db/tasks'
+import { addCompletedTaskToEOD } from '@/lib/integrations/notion-eod'
 
 const updateSchema = z.object({
   title: z.string().min(1).max(500).optional(),
@@ -53,14 +54,24 @@ export async function PATCH(
     }
 
     // Auto-set completed_at when marking done
+    let taskTitleForEOD: string | undefined
     if (updates.status === 'done') {
       const task = await getTask(id)
       if (task && task.status !== 'done') {
         Object.assign(updates, { completed_at: new Date().toISOString() })
+        taskTitleForEOD = task.title
       }
     }
 
     const task = await updateTask(id, updates)
+
+    // Fire-and-forget: append to today's Notion EOD report
+    if (taskTitleForEOD && process.env.NOTION_TOKEN) {
+      addCompletedTaskToEOD(taskTitleForEOD).catch(err =>
+        console.error('notion-eod append failed:', err)
+      )
+    }
+
     return NextResponse.json({ task })
   } catch (err) {
     console.error('PATCH /api/tasks/[id]', err)
