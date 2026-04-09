@@ -36,27 +36,27 @@ async function findOrCreateTodayPage(notion: Client): Promise<string> {
   const children: BlockObjectRequest[] = [
     { heading_1: { rich_text: [{ text: { content: '👤 Jay (Content Manager)' } }] } },
     { heading_2: { rich_text: [{ text: { content: '✅ Completed' } }] } },
-    { bulleted_list_item: { rich_text: [{ text: { content: '' } }] } },
+    { to_do: { rich_text: [{ text: { content: '' } }], checked: false } },
     { heading_2: { rich_text: [{ text: { content: '🔄 In Progress' } }] } },
-    { bulleted_list_item: { rich_text: [{ text: { content: '' } }] } },
+    { to_do: { rich_text: [{ text: { content: '' } }], checked: false } },
     { heading_2: { rich_text: [{ text: { content: '🚧 Blockers' } }] } },
-    { bulleted_list_item: { rich_text: [{ text: { content: '' } }] } },
+    { to_do: { rich_text: [{ text: { content: '' } }], checked: false } },
     { paragraph: { rich_text: [] } },
     { heading_1: { rich_text: [{ text: { content: '👤 Alvin (Video Editor)' } }] } },
     { heading_2: { rich_text: [{ text: { content: '✅ Completed' } }] } },
-    { bulleted_list_item: { rich_text: [{ text: { content: '' } }] } },
+    { to_do: { rich_text: [{ text: { content: '' } }], checked: false } },
     { heading_2: { rich_text: [{ text: { content: '🔄 In Progress' } }] } },
-    { bulleted_list_item: { rich_text: [{ text: { content: '' } }] } },
+    { to_do: { rich_text: [{ text: { content: '' } }], checked: false } },
     { heading_2: { rich_text: [{ text: { content: '🚧 Blockers' } }] } },
-    { bulleted_list_item: { rich_text: [{ text: { content: '' } }] } },
+    { to_do: { rich_text: [{ text: { content: '' } }], checked: false } },
     { paragraph: { rich_text: [] } },
     { heading_1: { rich_text: [{ text: { content: '👤 Vito (Motion Graphics Artist)' } }] } },
     { heading_2: { rich_text: [{ text: { content: '✅ Completed' } }] } },
-    { bulleted_list_item: { rich_text: [{ text: { content: '' } }] } },
+    { to_do: { rich_text: [{ text: { content: '' } }], checked: false } },
     { heading_2: { rich_text: [{ text: { content: '🔄 In Progress' } }] } },
-    { bulleted_list_item: { rich_text: [{ text: { content: '' } }] } },
+    { to_do: { rich_text: [{ text: { content: '' } }], checked: false } },
     { heading_2: { rich_text: [{ text: { content: '🚧 Blockers' } }] } },
-    { bulleted_list_item: { rich_text: [{ text: { content: '' } }] } },
+    { to_do: { rich_text: [{ text: { content: '' } }], checked: false } },
   ]
 
   const page = await notion.pages.create({
@@ -133,8 +133,9 @@ export async function addCompletedTaskToEOD(taskTitle: string): Promise<void> {
     after: afterId as any,
     children: [
       {
-        bulleted_list_item: {
+        to_do: {
           rich_text: [{ text: { content: taskTitle } }],
+          checked: true,
         },
       },
     ],
