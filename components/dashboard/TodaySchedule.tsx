@@ -38,9 +38,9 @@ export function TodaySchedule({ events }: Props) {
                 key={event.id}
                 className={clsx(
                   'flex items-start gap-2.5 p-2 rounded-lg border text-sm',
-                  isPast && 'opacity-50',
-                  isNext && 'border-orange-200 bg-orange-50',
-                  !isPast && !isNext && 'border-gray-100 bg-white'
+                  isPast && 'opacity-40',
+                  isNext && 'border-orange-700/60 bg-orange-900/20',
+                  !isPast && !isNext && 'border-[#2a2d3a] bg-[#1e2130]'
                 )}
               >
                 <div className="w-12 flex-shrink-0 text-right">
@@ -53,7 +53,7 @@ export function TodaySchedule({ events }: Props) {
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-900 text-xs leading-snug">{event.title}</p>
+                  <p className="font-medium text-gray-100 text-xs leading-snug">{event.title}</p>
                   {!event.isAllDay && (
                     <p className="text-[11px] text-gray-400">{duration}m</p>
                   )}
@@ -66,7 +66,7 @@ export function TodaySchedule({ events }: Props) {
                 </div>
 
                 {isNext && (
-                  <span className="text-[10px] font-semibold text-orange-600 bg-orange-100 px-1.5 py-0.5 rounded flex-shrink-0">
+                  <span className="text-[10px] font-semibold text-orange-400 bg-orange-900/40 px-1.5 py-0.5 rounded flex-shrink-0">
                     NEXT
                   </span>
                 )}
