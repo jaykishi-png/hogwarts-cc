@@ -1,6 +1,7 @@
 import type { FullSyncResult, SyncResult } from '@/types/sync'
 import { listTasks, bulkUpdatePriorityScores } from '@/lib/db/tasks'
 import { scoreAllTasks } from '@/lib/intelligence/scorer'
+import { deduplicateTasks } from '@/lib/sync/deduplicator'
 import type { CalendarEvent } from '@/types/source'
 import { supabase } from '@/lib/db/client'
 
@@ -95,7 +96,14 @@ export async function runFullSync(baseUrl: string): Promise<FullSyncResult> {
     }
   })
 
-  // After all sources synced, re-score all tasks
+  // After all sources synced, deduplicate cross-source matches
+  try {
+    await deduplicateTasks()
+  } catch (err) {
+    console.error('Deduplication failed:', err)
+  }
+
+  // Re-score all tasks
   try {
     await runPriorityScoring()
   } catch (err) {

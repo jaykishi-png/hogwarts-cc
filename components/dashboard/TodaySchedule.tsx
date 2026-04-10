@@ -23,7 +23,7 @@ export function TodaySchedule({ events }: Props) {
       </h2>
 
       {sorted.length === 0 ? (
-        <p className="text-sm text-gray-400 py-4 text-center">No events today</p>
+        <p className="text-sm text-gray-500 py-4 text-center">No events today</p>
       ) : (
         <div className="space-y-1.5">
           {sorted.map(event => {
@@ -40,14 +40,14 @@ export function TodaySchedule({ events }: Props) {
                   'flex items-start gap-2.5 p-2 rounded-lg border text-sm',
                   isPast && 'opacity-40',
                   isNext && 'border-orange-700/60 bg-orange-900/20',
-                  !isPast && !isNext && 'border-[#2a2d3a] bg-[#1e2130]'
+                  !isPast && !isNext && 'border-[#2a2d3a] bg-[#13151e]'
                 )}
               >
                 <div className="w-12 flex-shrink-0 text-right">
-                  <span className="text-xs font-mono text-gray-500">
+                  <span className="text-xs font-mono text-gray-400">
                     {event.isAllDay ? 'All day' : format(start, 'h:mm')}
                     {!event.isAllDay && (
-                      <span className="block text-gray-400 text-[10px]">{format(start, 'a')}</span>
+                      <span className="block text-gray-500 text-[10px]">{format(start, 'a')}</span>
                     )}
                   </span>
                 </div>
