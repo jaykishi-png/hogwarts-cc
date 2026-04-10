@@ -16,6 +16,8 @@ import { CompletedToday } from './CompletedToday'
 import { QuickAdd } from './QuickAdd'
 import { SyncStatus } from '@/components/ui/SyncStatus'
 import type { SyncLogEntry } from '@/types/sync'
+import Link from 'next/link'
+import { CalendarDays } from 'lucide-react'
 
 const fetcher = (url: string) => fetch(url).then(r => r.json())
 
@@ -59,6 +61,13 @@ export function DashboardShell() {
           <div className="flex items-center gap-3">
             <h1 className="text-base font-semibold text-gray-100">Dashboard</h1>
             <span className="text-sm text-gray-500">{format(new Date(), 'EEEE, MMMM d')}</span>
+            <Link
+              href="/calendar"
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors ml-2 border border-[#2a2d3a] rounded-lg px-2.5 py-1 hover:border-gray-600"
+            >
+              <CalendarDays size={12} />
+              Calendar
+            </Link>
           </div>
           <SyncStatus
             isSyncing={isSyncing}
