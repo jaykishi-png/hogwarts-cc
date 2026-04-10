@@ -2,7 +2,8 @@ import { WebClient } from '@slack/web-api'
 import type { SlackMessage } from '@/types/source'
 
 function getClient() {
-  const token = process.env.SLACK_BOT_TOKEN?.replace(/[\r\n\s]/g, '')
+  const raw = process.env.SLACK_BOT_TOKEN ?? ''
+  const token = Array.from(raw).filter(c => c.charCodeAt(0) >= 32).join('')
   if (!token) throw new Error('SLACK_BOT_TOKEN not set')
   return new WebClient(token)
 }

@@ -3,7 +3,9 @@ import type { PageObjectResponse } from '@notionhq/client/build/src/api-endpoint
 import type { NotionTask } from '@/types/source'
 
 function getClient() {
-  const token = process.env.NOTION_TOKEN?.replace(/[\r\n\s]/g, '')
+  const raw = process.env.NOTION_TOKEN ?? ''
+  // Strip all control characters (newlines, carriage returns, etc.)
+  const token = Array.from(raw).filter(c => c.charCodeAt(0) >= 32).join('')
   if (!token) throw new Error('NOTION_TOKEN not set')
   return new Client({ auth: token })
 }
