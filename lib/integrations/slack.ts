@@ -2,8 +2,9 @@ import { WebClient } from '@slack/web-api'
 import type { SlackMessage } from '@/types/source'
 
 function getClient() {
-  if (!process.env.SLACK_BOT_TOKEN) throw new Error('SLACK_BOT_TOKEN not set')
-  return new WebClient(process.env.SLACK_BOT_TOKEN)
+  const token = process.env.SLACK_BOT_TOKEN?.trim()
+  if (!token) throw new Error('SLACK_BOT_TOKEN not set')
+  return new WebClient(token)
 }
 
 async function getMyUserId(client: WebClient): Promise<string> {

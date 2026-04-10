@@ -3,8 +3,9 @@ import type { PageObjectResponse } from '@notionhq/client/build/src/api-endpoint
 import type { NotionTask } from '@/types/source'
 
 function getClient() {
-  if (!process.env.NOTION_TOKEN) throw new Error('NOTION_TOKEN not set')
-  return new Client({ auth: process.env.NOTION_TOKEN })
+  const token = process.env.NOTION_TOKEN?.trim()
+  if (!token) throw new Error('NOTION_TOKEN not set')
+  return new Client({ auth: token })
 }
 
 // Maps Notion status property to our internal status string
