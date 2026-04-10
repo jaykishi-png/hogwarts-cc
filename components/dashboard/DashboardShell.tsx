@@ -17,6 +17,7 @@ import { ForReview } from './ForReview'
 import { CompletedToday } from './CompletedToday'
 import { BottleneckView } from './BottleneckView'
 import { QuickAdd } from './QuickAdd'
+import { HogwartsPanel } from './HogwartsPanel'
 import { SyncStatus } from '@/components/ui/SyncStatus'
 import { KeyboardShortcutsHelp } from '@/components/ui/KeyboardShortcutsHelp'
 import type { SyncLogEntry } from '@/types/sync'
@@ -195,97 +196,105 @@ export function DashboardShell() {
             Loading your dashboard...
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
 
-            {/* Column 1: Top Priorities + Quick Add */}
-            <div className="xl:col-span-1 space-y-6">
-              <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4 space-y-4">
-                <TopPriorities
-                  tasks={activeTasks}
+              {/* Column 1: Top Priorities + Quick Add */}
+              <div className="xl:col-span-1 space-y-6">
+                <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4 space-y-4">
+                  <TopPriorities
+                    tasks={activeTasks}
+                    onComplete={completeTask}
+                    onDefer={deferTask}
+                    onPin={pinTask}
+                    onNotToday={notTodayTask}
+                    onSetPriority={setPriority}
+                  />
+                  <QuickAdd onAdd={addTask} />
+                </div>
+
+                <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
+                  <CompletedToday tasks={completedTasks} />
+                </div>
+              </div>
+
+              {/* Column 2: Calendar + Needs Reply + Slack */}
+              <div className="xl:col-span-1 space-y-6">
+                <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
+                  <TodaySchedule events={events} />
+                </div>
+
+                <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
+                  <NeedsReply
+                    tasks={activeTasks}
+                    onComplete={completeTask}
+                    onDefer={deferTask}
+                    onPin={pinTask}
+                    onNotToday={notTodayTask}
+                    onSetPriority={setPriority}
+                  />
+                </div>
+
+                <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
+                  <SlackItems
+                    tasks={activeTasks}
+                    onComplete={completeTask}
+                    onDefer={deferTask}
+                    onPin={pinTask}
+                    onNotToday={notTodayTask}
+                    onSetPriority={setPriority}
+                  />
+                </div>
+              </div>
+
+              {/* Column 3: Monday + Notion + For Review */}
+              <div className="xl:col-span-1 space-y-6">
+                <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
+                  <MondayWork
+                    tasks={activeTasks}
+                    onComplete={completeTask}
+                    onDefer={deferTask}
+                    onPin={pinTask}
+                    onNotToday={notTodayTask}
+                    onSetPriority={setPriority}
+                  />
+                </div>
+
+                <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
+                  <NotionTasks
+                    tasks={activeTasks}
+                    onComplete={completeTask}
+                    onDefer={deferTask}
+                    onPin={pinTask}
+                    onNotToday={notTodayTask}
+                    onSetPriority={setPriority}
+                  />
+                </div>
+
+                <ForReview
+                  tasks={tasks}
                   onComplete={completeTask}
                   onDefer={deferTask}
                   onPin={pinTask}
                   onNotToday={notTodayTask}
                   onSetPriority={setPriority}
+                  onConfirm={confirmTask}
+                  onDismiss={dismissTask}
                 />
-                <QuickAdd onAdd={addTask} />
+
+                <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
+                  <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                    Pipeline Bottlenecks
+                  </h2>
+                  <BottleneckView />
+                </div>
               </div>
 
-              <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
-                <CompletedToday tasks={completedTasks} />
-              </div>
             </div>
 
-            {/* Column 2: Calendar + Needs Reply + Slack */}
-            <div className="xl:col-span-1 space-y-6">
-              <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
-                <TodaySchedule events={events} />
-              </div>
-
-              <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
-                <NeedsReply
-                  tasks={activeTasks}
-                  onComplete={completeTask}
-                  onDefer={deferTask}
-                  onPin={pinTask}
-                  onNotToday={notTodayTask}
-                  onSetPriority={setPriority}
-                />
-              </div>
-
-              <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
-                <SlackItems
-                  tasks={activeTasks}
-                  onComplete={completeTask}
-                  onDefer={deferTask}
-                  onPin={pinTask}
-                  onNotToday={notTodayTask}
-                  onSetPriority={setPriority}
-                />
-              </div>
-            </div>
-
-            {/* Column 3: Monday + Notion + For Review */}
-            <div className="xl:col-span-1 space-y-6">
-              <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
-                <MondayWork
-                  tasks={activeTasks}
-                  onComplete={completeTask}
-                  onDefer={deferTask}
-                  onPin={pinTask}
-                  onNotToday={notTodayTask}
-                  onSetPriority={setPriority}
-                />
-              </div>
-
-              <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
-                <NotionTasks
-                  tasks={activeTasks}
-                  onComplete={completeTask}
-                  onDefer={deferTask}
-                  onPin={pinTask}
-                  onNotToday={notTodayTask}
-                  onSetPriority={setPriority}
-                />
-              </div>
-
-              <ForReview
-                tasks={tasks}
-                onComplete={completeTask}
-                onDefer={deferTask}
-                onPin={pinTask}
-                onNotToday={notTodayTask}
-                onSetPriority={setPriority}
-                onConfirm={confirmTask}
-                onDismiss={dismissTask}
-              />
-
-              <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
-                <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                  Pipeline Bottlenecks
-                </h2>
-                <BottleneckView />
-              </div>
+            {/* Hogwarts Agent Panel */}
+            <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
+              <HogwartsPanel />
             </div>
 
           </div>

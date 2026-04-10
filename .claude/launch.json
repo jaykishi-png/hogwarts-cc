@@ -2,9 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "personal-dashboard",
-      "runtimeExecutable": "npm",
+      "name": "dashboard",
+      "runtimeExecutable": "/opt/homebrew/bin/npm",
       "runtimeArgs": ["run", "dev"],
+      "cwd": "/Users/jay/Desktop/Other/VIBE CODING/personal-dashboard",
       "port": 3000
     }
   ]
