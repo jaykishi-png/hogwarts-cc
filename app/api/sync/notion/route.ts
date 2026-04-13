@@ -24,6 +24,21 @@ export async function POST(_req: NextRequest) {
 
     // ── Inbound: Notion → local DB ───────────────────────────────────────────
     for (const nt of notionTasks) {
+      // Skip EOD Report pages — these are reports, not tasks
+      if (nt.title.toLowerCase().includes('eod report')) continue
+
+      // Skip pages with "Sent" status
+      const doneStatuses = ['done', 'complete', 'completed', 'finished', 'sent']
+      if (doneStatuses.some(s => nt.status.toLowerCase().includes(s))) {
+        // If already in DB, mark as done
+        const existing = await getTaskBySourceItem('notion', nt.pageId)
+        if (existing && existing.status !== 'done') {
+          await updateTask(existing.id, { status: 'done', completed_at: new Date().toISOString() })
+          tasksUpdated++
+        }
+        continue
+      }
+
       await upsertSourceItem('notion', nt.pageId, nt as unknown as Record<string, unknown>)
 
       const existing = await getTaskBySourceItem('notion', nt.pageId)
@@ -40,8 +55,8 @@ export async function POST(_req: NextRequest) {
         }
 
         // Reflect Notion "Done" status locally
-        const doneStatuses = ['done', 'complete', 'completed', 'finished', 'sent']
-        if (doneStatuses.some(s => nt.status.includes(s)) && existing.status !== 'done') {
+        const doneStatusList = ['done', 'complete', 'completed', 'finished', 'sent']
+        if (doneStatusList.some(s => nt.status.toLowerCase().includes(s)) && existing.status !== 'done') {
           updates.status = 'done'
           updates.completed_at = new Date().toISOString()
         }
