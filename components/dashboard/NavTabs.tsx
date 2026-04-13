@@ -2,9 +2,11 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
-import { LayoutDashboard } from 'lucide-react'
+import { LayoutDashboard, Building2 } from 'lucide-react'
 
-const TABS = [
+type TabKey = 'dashboard' | 'hogwarts' | 'office'
+
+const TABS: { key: TabKey; label: string; href: string; icon: React.ReactNode }[] = [
   {
     key: 'dashboard',
     label: 'Dashboard',
@@ -25,9 +27,15 @@ const TABS = [
       />
     ),
   },
+  {
+    key: 'office',
+    label: 'Office',
+    href: '/office',
+    icon: <Building2 size={12} />,
+  },
 ]
 
-export function NavTabs({ active }: { active: 'dashboard' | 'hogwarts' }) {
+export function NavTabs({ active }: { active: TabKey }) {
   return (
     <nav className="flex items-center gap-1 bg-[#0f1117] rounded-lg p-1 border border-[#2a2d3a]">
       {TABS.map(tab => (

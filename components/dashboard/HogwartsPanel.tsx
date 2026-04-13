@@ -99,6 +99,18 @@ export function HogwartsPanel() {
   const [respondingAvatar, setRespondingAvatar] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [activeAgent, setActiveAgent] = useState<string | null>(null)
+
+  function mentionAgent(name: string) {
+    const mention = `@${name.toLowerCase()} `
+    setQuestion(mention)
+    setActiveAgent(name)
+    // Focus input after click
+    setTimeout(() => {
+      const input = document.getElementById('hogwarts-input')
+      if (input) { (input as HTMLInputElement).focus() }
+    }, 50)
+  }
 
   async function ask() {
     if (!question.trim() || loading) return
@@ -106,6 +118,7 @@ export function HogwartsPanel() {
     setError('')
     setAnswer('')
     setRespondingAgent('')
+    setActiveAgent(null)
     try {
       const res = await fetch('/api/agents/ask', {
         method: 'POST',
@@ -163,9 +176,14 @@ export function HogwartsPanel() {
       {/* Agent roster */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-2">
         {AGENTS.map(agent => (
-          <div
+          <button
             key={agent.name}
-            className={`rounded-lg border p-2.5 ${COLOR_MAP[agent.color]}`}
+            onClick={() => mentionAgent(agent.name)}
+            title={`Click to chat with @${agent.name.toLowerCase()}`}
+            className={`rounded-lg border p-2.5 text-left transition-all duration-150 hover:scale-[1.03] hover:shadow-lg cursor-pointer
+              ${COLOR_MAP[agent.color]}
+              ${activeAgent === agent.name ? 'ring-2 ring-offset-1 ring-offset-[#0f1117] ' + RING_MAP[agent.color] : ''}
+            `}
           >
             {/* Avatar + online dot */}
             <div className="flex items-center gap-2 mb-2">
@@ -190,7 +208,7 @@ export function HogwartsPanel() {
                 </span>
               ))}
             </div>
-          </div>
+          </button>
         ))}
       </div>
 
@@ -199,11 +217,12 @@ export function HogwartsPanel() {
         <div className="flex gap-2">
           <div className="flex-1 relative">
             <input
+              id="hogwarts-input"
               type="text"
               value={question}
-              onChange={e => setQuestion(e.target.value)}
+              onChange={e => { setQuestion(e.target.value); if (!e.target.value.startsWith('@')) setActiveAgent(null) }}
               onKeyDown={handleKey}
-              placeholder="Ask anything — auto-routed to the right agent. Or @snape, @hagrid, etc."
+              placeholder="Click an agent above to mention them, or just ask anything…"
               className="w-full bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-purple-700/60 transition-colors"
             />
           </div>
