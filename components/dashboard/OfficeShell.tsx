@@ -131,75 +131,69 @@ function MiniCharacter({
   const [imgFailed, setImgFailed] = useState(false)
   const outfit = OUTFIT[agent.color]
 
-  const headSize = 26
-  const bodyW = 18
-  const bodyH = 16
-  const legW = 7
-  const legH = 15
-  const armW = 5
-  const armH = 12
-  const totalW = bodyW + armW * 2 + 4
-  const totalH = headSize + bodyH + legH + 4
+  // Larger so portrait is clearly visible
+  const headSize = 40
+  const bodyW    = 28
+  const bodyH    = 20
+  const legW     = 11
+  const legH     = 18
+  const armW     = 8
+  const armH     = 16
+
+  const statusBorder =
+    agent.status === 'online'     ? '#4ade80' :
+    agent.status === 'working'    ? '#fbbf24' :
+    agent.status === 'in-meeting' ? '#60a5fa' : '#4b5563'
 
   return (
     <button
       onClick={onClick}
-      className={`
-        absolute select-none cursor-pointer focus:outline-none group
-        transition-[left,top] duration-[750ms] ease-[cubic-bezier(0.4,0,0.2,1)]
-      `}
+      className="absolute select-none cursor-pointer focus:outline-none"
       style={{
         left: `${getPos(agent).x}%`,
-        top: `${getPos(agent).y}%`,
+        top:  `${getPos(agent).y}%`,
         transform: 'translate(-50%, -50%)',
+        transition: 'left 0.75s cubic-bezier(0.4,0,0.2,1), top 0.75s cubic-bezier(0.4,0,0.2,1)',
         zIndex: isWalking ? 50 : 10,
-        // Use will-change for GPU acceleration of the movement
         willChange: isWalking ? 'left, top' : 'auto',
       }}
       title={`${agent.name} — click to ${agent.currentRoom === 'great-hall' ? 'return to desk' : 'call to meeting'}`}
     >
       <div className="flex flex-col items-center gap-0">
 
-        {/* Status bubble above head */}
-        <div className="h-4 flex items-center justify-center mb-0.5">
-          {agent.status === 'working' && (
-            <span className="text-[10px] status-pulse">💭</span>
-          )}
-          {agent.status === 'in-meeting' && (
-            <span className="text-[10px] status-pulse">🗣️</span>
-          )}
-          {agent.status === 'away' && (
-            <span className="text-[10px] status-pulse opacity-60">💤</span>
-          )}
+        {/* Status emoji above head */}
+        <div style={{ height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 2 }}>
+          {agent.status === 'working'    && <span className="status-pulse" style={{ fontSize: 12 }}>💭</span>}
+          {agent.status === 'in-meeting' && <span className="status-pulse" style={{ fontSize: 12 }}>🗣️</span>}
+          {agent.status === 'away'       && <span className="status-pulse" style={{ fontSize: 12, opacity: 0.6 }}>💤</span>}
         </div>
 
-        {/* The character — flip horizontally if walking left */}
+        {/* Character body — flipped when walking left */}
         <div
           className={isWalking ? 'agent-walking' : ''}
           style={{
-            transform: facingLeft ? 'scaleX(-1)' : 'scaleX(1)',
-            transition: 'transform 0.15s',
-            filter: agent.status !== 'away' ? GLOW[agent.color] : 'grayscale(1) opacity(0.4)',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
+            transform: facingLeft ? 'scaleX(-1)' : 'scaleX(1)',
+            transition: 'transform 0.12s',
+            filter: agent.status !== 'away' ? GLOW[agent.color] : 'grayscale(1) opacity(0.45)',
           }}
         >
-          {/* Head — portrait image */}
+          {/* ── HEAD: full portrait image, circular ── */}
           <div
-            className={`rounded-full overflow-hidden border-2 flex-shrink-0 ${
-              agent.status === 'online'      ? 'border-green-400' :
-              agent.status === 'working'     ? 'border-amber-400' :
-              agent.status === 'in-meeting'  ? 'border-blue-400'  :
-                                               'border-gray-600'
-            }`}
-            style={{ width: headSize, height: headSize }}
+            style={{
+              width: headSize,
+              height: headSize,
+              borderRadius: '50%',
+              overflow: 'hidden',
+              border: `2.5px solid ${statusBorder}`,
+              flexShrink: 0,
+              boxShadow: `0 0 8px ${statusBorder}55`,
+            }}
           >
             {imgFailed ? (
-              <div
-                className="w-full h-full flex items-center justify-center text-[9px] font-bold"
-                style={{ background: outfit.body, color: '#fff' }}
-              >
+              <div style={{ width: '100%', height: '100%', background: outfit.body, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 14, fontWeight: 700 }}>
                 {agent.name[0]}
               </div>
             ) : (
@@ -208,57 +202,57 @@ function MiniCharacter({
                 alt={agent.name}
                 width={headSize}
                 height={headSize}
-                className="object-cover object-top w-full h-full"
+                style={{ objectFit: 'cover', objectPosition: 'top center', width: '100%', height: '100%' }}
                 onError={() => setImgFailed(true)}
               />
             )}
           </div>
 
-          {/* Torso + arms row */}
-          <div className="flex items-center" style={{ marginTop: 1 }}>
+          {/* ── TORSO + ARMS ── */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', marginTop: 2 }}>
             {/* Left arm */}
             <div
-              className="arm-left rounded-full flex-shrink-0"
+              className="arm-left"
               style={{
                 width: armW, height: armH,
                 background: outfit.body,
-                borderRadius: 3,
+                borderRadius: 4,
                 transformOrigin: 'top center',
-                marginRight: 1,
-                marginTop: 2,
+                marginRight: 2,
+                marginTop: 3,
               }}
             />
-            {/* Body */}
+            {/* Torso */}
             <div
-              className="char-body rounded-sm flex-shrink-0"
+              className="char-body"
               style={{
                 width: bodyW, height: bodyH,
                 background: outfit.body,
-                borderRadius: '3px 3px 2px 2px',
+                borderRadius: '4px 4px 3px 3px',
               }}
             />
             {/* Right arm */}
             <div
-              className="arm-right rounded-full flex-shrink-0"
+              className="arm-right"
               style={{
                 width: armW, height: armH,
                 background: outfit.body,
-                borderRadius: 3,
+                borderRadius: 4,
                 transformOrigin: 'top center',
-                marginLeft: 1,
-                marginTop: 2,
+                marginLeft: 2,
+                marginTop: 3,
               }}
             />
           </div>
 
-          {/* Legs row */}
-          <div className="flex gap-[2px]" style={{ marginTop: 1 }}>
+          {/* ── LEGS ── */}
+          <div style={{ display: 'flex', gap: 3, marginTop: 2 }}>
             <div
               className="leg-left"
               style={{
                 width: legW, height: legH,
                 background: outfit.pants,
-                borderRadius: '2px 2px 4px 4px',
+                borderRadius: '3px 3px 5px 5px',
                 transformOrigin: 'top center',
               }}
             />
@@ -267,7 +261,7 @@ function MiniCharacter({
               style={{
                 width: legW, height: legH,
                 background: outfit.pants,
-                borderRadius: '2px 2px 4px 4px',
+                borderRadius: '3px 3px 5px 5px',
                 transformOrigin: 'top center',
               }}
             />
@@ -275,23 +269,24 @@ function MiniCharacter({
         </div>
 
         {/* Ground shadow */}
-        <div
-          className="rounded-full"
-          style={{
-            width: 20, height: 4,
-            background: 'rgba(0,0,0,0.35)',
-            marginTop: 1,
-            filter: 'blur(1px)',
-          }}
-        />
+        <div style={{ width: 30, height: 5, background: 'rgba(0,0,0,0.3)', borderRadius: '50%', marginTop: 2, filter: 'blur(2px)' }} />
 
-        {/* Name tag (never flipped) */}
-        <div className="mt-0.5 pointer-events-none">
-          <span className="text-[7px] font-bold text-gray-400 bg-[#0a0c14]/90 rounded px-1 py-0.5 whitespace-nowrap border border-[#2a2d3a]/50">
+        {/* Name tag */}
+        <div style={{ marginTop: 3, pointerEvents: 'none' }}>
+          <span style={{
+            fontSize: 8,
+            fontWeight: 700,
+            color: '#9ca3af',
+            background: 'rgba(10,12,20,0.92)',
+            borderRadius: 3,
+            padding: '1px 4px',
+            whiteSpace: 'nowrap',
+            border: '1px solid rgba(42,45,58,0.6)',
+            letterSpacing: '0.05em',
+          }}>
             {agent.name === 'McGONAGALL' ? 'McGON.' : agent.name.slice(0, 7)}
           </span>
         </div>
-
       </div>
     </button>
   )
