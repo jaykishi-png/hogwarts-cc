@@ -6,6 +6,7 @@ import { format } from 'date-fns'
 import {
   Loader2, Send, Users, Zap, RotateCcw, Wifi,
   Home, Bot, MessageSquare, Layers, Globe, Activity, Settings2, Monitor,
+  Clapperboard, Link2, ToggleLeft, ToggleRight, ClipboardCopy, Check,
 } from 'lucide-react'
 import { NavTabs } from './NavTabs'
 import type { ComponentType } from 'react'
@@ -641,6 +642,7 @@ function LeftToolbar({ active, setActive }: { active: string; setActive: (k: str
     { key: 'office',   icon: Monitor,       label: 'Office Map' },
     { key: 'agents',   icon: Bot,           label: 'Agents' },
     { key: 'chat',     icon: MessageSquare, label: 'Chat' },
+    { key: 'qc',       icon: Clapperboard,  label: 'Video QC' },
     null,
     { key: 'env',      icon: Globe,         label: 'Environment' },
     { key: 'layout',   icon: Layers,        label: 'Layout' },
@@ -841,8 +843,15 @@ export function HogwartsShell() {
   const [briefDone, setBriefDone]       = useState(false)
   const briefScrollRef = useRef<HTMLDivElement>(null)
 
-  // ── QC state ─────────────────────────────────────────────────────────────
+  // ── QC panel state ────────────────────────────────────────────────────────
   const [qcPostComment, setQcPostComment] = useState(false)
+  const [qcUrl, setQcUrl]                 = useState('')
+  const [qcLoading, setQcLoading]         = useState(false)
+  const [qcReport, setQcReport]           = useState('')
+  const [qcAssetName, setQcAssetName]     = useState('')
+  const [qcError, setQcError]             = useState('')
+  const [qcCopied, setQcCopied]           = useState(false)
+  const [qcHistory, setQcHistory]         = useState<{ url: string; assetName: string; report: string; ts: string }[]>([])
 
   // ── UI state ────────────────────────────────────────────────────────────
   const [activeTool, setActiveTool]     = useState('office')
@@ -1013,6 +1022,33 @@ export function HogwartsShell() {
     }, 60_000)
   }
 
+  // ── QC panel runner ──────────────────────────────────────────────────────
+  async function runQcPanel(url: string) {
+    if (!url.trim() || qcLoading) return
+    setQcLoading(true); setQcError(''); setQcReport(''); setQcAssetName('')
+    pushLog(`HARRY: Running QC on Frame.io asset…`, 'chat')
+    try {
+      const res  = await fetch('/api/qc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: url.trim(), postComment: qcPostComment }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        setQcError(data.error)
+      } else {
+        setQcReport(data.answer)
+        setQcAssetName(data.assetName ?? 'Asset')
+        setQcHistory(prev => [
+          { url: url.trim(), assetName: data.assetName ?? 'Asset', report: data.answer, ts: format(new Date(), 'HH:mm') },
+          ...prev.slice(0, 9),
+        ])
+        pushLog(`HARRY: QC complete — "${data.assetName ?? 'asset'}"`, 'chat')
+      }
+    } catch (err) { setQcError(String(err)) }
+    finally { setQcLoading(false) }
+  }
+
   // ── Chat helpers ─────────────────────────────────────────────────────────
   function mentionAgent(name: string) {
     setQuestion(`@${name.toLowerCase()} `)
@@ -1129,9 +1165,167 @@ export function HogwartsShell() {
           {/* ── Main canvas ─────────────────────────────────────────────────── */}
           <main className="flex-1 min-h-0 flex gap-3 p-3">
 
+            {/* ── QC Panel (shown when activeTool === 'qc') ─────────────────── */}
+            {activeTool === 'qc' && (
+              <div className="flex-1 min-w-0 flex flex-col gap-3 min-h-0">
+
+                {/* Header + URL input */}
+                <div className="flex-shrink-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-7 h-7 rounded-lg bg-red-900/40 border border-red-800/40 flex items-center justify-center">
+                      <Clapperboard size={13} className="text-red-400" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-gray-200">Video QC</p>
+                      <p className="text-[10px] text-gray-600">HARRY reviews your Frame.io assets</p>
+                    </div>
+                    {/* Post to Frame.io toggle */}
+                    <div className="ml-auto flex items-center gap-2">
+                      <span className="text-[10px] text-gray-600">Post to Frame.io</span>
+                      <button onClick={() => setQcPostComment(p => !p)} className="flex items-center">
+                        {qcPostComment
+                          ? <ToggleRight size={20} className="text-red-400" />
+                          : <ToggleLeft  size={20} className="text-gray-600" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* URL paste input */}
+                  <div className="flex gap-2">
+                    <div className="flex-1 relative">
+                      <Link2 size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={qcUrl}
+                        onChange={e => { setQcUrl(e.target.value); setQcError('') }}
+                        onKeyDown={e => { if (e.key === 'Enter') runQcPanel(qcUrl) }}
+                        placeholder="Paste Frame.io review or asset link…"
+                        className="w-full bg-[#07080e] border border-[#1e2030] rounded-lg pl-8 pr-3 py-2.5 text-sm text-gray-200 placeholder-gray-700 focus:outline-none focus:border-red-700/60 transition-colors"
+                      />
+                    </div>
+                    <button
+                      onClick={() => runQcPanel(qcUrl)}
+                      disabled={!qcUrl.trim() || qcLoading}
+                      className="flex-shrink-0 bg-red-800/80 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg px-4 py-2.5 text-xs font-semibold transition-colors flex items-center gap-1.5"
+                    >
+                      {qcLoading ? <Loader2 size={13} className="animate-spin" /> : <Clapperboard size={13} />}
+                      {qcLoading ? 'Running…' : 'Run QC'}
+                    </button>
+                  </div>
+                  {qcError && (
+                    <p className="mt-2 text-[11px] text-red-400 bg-red-900/20 border border-red-800/30 rounded-lg px-3 py-2">⚠️ {qcError}</p>
+                  )}
+                </div>
+
+                {/* Report area + history side-by-side */}
+                <div className="flex-1 min-h-0 flex gap-3">
+
+                  {/* Report output */}
+                  <div className="flex-1 min-h-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] flex flex-col overflow-hidden">
+                    {qcLoading && (
+                      <div className="flex-1 flex flex-col items-center justify-center gap-3">
+                        <Loader2 size={28} className="animate-spin text-red-500 opacity-70" />
+                        <div className="text-center">
+                          <p className="text-xs text-gray-400 font-medium">HARRY is reviewing…</p>
+                          <p className="text-[10px] text-gray-700 mt-0.5">Fetching asset · running visual scan · checking audio</p>
+                        </div>
+                      </div>
+                    )}
+                    {!qcLoading && !qcReport && (
+                      <div className="flex-1 flex flex-col items-center justify-center gap-2.5 text-center p-6">
+                        <div className="w-12 h-12 rounded-xl bg-red-900/20 border border-red-800/20 flex items-center justify-center">
+                          <Clapperboard size={20} className="text-red-800/60" />
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-600 font-medium">No report yet</p>
+                          <p className="text-[10px] text-gray-700 mt-0.5 leading-relaxed">
+                            Paste a Frame.io link above and hit Run QC.<br />
+                            HARRY will check visual, audio, and technical quality.
+                          </p>
+                        </div>
+                        <div className="mt-2 text-[10px] text-gray-800 space-y-1 text-left">
+                          <p>✓ Typos &amp; on-screen text</p>
+                          <p>✓ Exposure &amp; color grading</p>
+                          <p>✓ Transcript &amp; filler words</p>
+                          <p>✓ Technical specs (res, fps, filesize)</p>
+                        </div>
+                      </div>
+                    )}
+                    {!qcLoading && qcReport && (
+                      <>
+                        {/* Report header */}
+                        <div className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 border-b border-[#1e2030]">
+                          <AgentAvatar avatar="/agents/HARRY_Cyborg.png" name="HARRY" color="red" size={22} />
+                          <span className="text-[11px] font-bold text-red-300 uppercase tracking-wider">HARRY</span>
+                          <span className="text-[10px] text-gray-600 ml-0.5">· Creative Review</span>
+                          {qcAssetName && (
+                            <span className="ml-1 text-[10px] text-gray-500 bg-[#1e2030] rounded px-1.5 py-0.5 truncate max-w-[180px]">{qcAssetName}</span>
+                          )}
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(qcReport)
+                              setQcCopied(true)
+                              setTimeout(() => setQcCopied(false), 2000)
+                            }}
+                            className="ml-auto flex items-center gap-1 text-[10px] text-gray-600 hover:text-gray-300 transition-colors"
+                          >
+                            {qcCopied ? <Check size={11} className="text-green-400" /> : <ClipboardCopy size={11} />}
+                            {qcCopied ? 'Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        {/* Report body */}
+                        <div className="flex-1 overflow-y-auto p-4 prose prose-invert max-w-none text-xs text-gray-300">
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            components={{
+                              h1: ({ children }) => <p className="font-bold text-gray-100 mb-2 mt-3 text-sm border-b border-[#1e2030] pb-1">{children}</p>,
+                              h2: ({ children }) => <p className="font-bold text-gray-200 mb-1.5 mt-3 text-[13px]">{children}</p>,
+                              h3: ({ children }) => <p className="font-semibold text-gray-300 mb-1 mt-2 text-xs">{children}</p>,
+                              p:  ({ children }) => <p className="mb-2 leading-relaxed">{children}</p>,
+                              ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>,
+                              ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>,
+                              li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                              strong: ({ children }) => <strong className="font-semibold text-gray-100">{children}</strong>,
+                              em: ({ children }) => <em className="italic text-gray-400">{children}</em>,
+                              code: ({ children }) => <code className="bg-[#1e2030] text-red-300 rounded px-1 py-0.5 font-mono text-[11px]">{children}</code>,
+                              hr: () => <hr className="border-[#2a2d3a] my-3" />,
+                              blockquote: ({ children }) => <blockquote className="border-l-2 border-red-700 pl-3 text-gray-400 italic my-2">{children}</blockquote>,
+                            }}
+                          >
+                            {qcReport}
+                          </ReactMarkdown>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* History sidebar */}
+                  {qcHistory.length > 0 && (
+                    <div className="w-52 flex-shrink-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] flex flex-col overflow-hidden">
+                      <p className="flex-shrink-0 text-[9px] font-semibold text-gray-700 uppercase tracking-wider px-3 pt-3 pb-2 border-b border-[#1e2030]">
+                        Recent Reviews
+                      </p>
+                      <div className="flex-1 overflow-y-auto">
+                        {qcHistory.map((h, i) => (
+                          <button
+                            key={i}
+                            onClick={() => { setQcReport(h.report); setQcAssetName(h.assetName); setQcUrl(h.url) }}
+                            className="w-full text-left px-3 py-2.5 border-b border-[#1e2030]/60 hover:bg-[#1e2030]/40 transition-colors"
+                          >
+                            <p className="text-[10px] text-gray-300 font-medium truncate">{h.assetName}</p>
+                            <p className="text-[9px] text-gray-700 mt-0.5">{h.ts}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* ── Floor plan ────────────────────────────────────────────────── */}
             <div
-              className="flex-1 min-w-0 relative rounded-xl overflow-hidden border-2 border-[#1a0e06]"
+              className={`flex-1 min-w-0 relative rounded-xl overflow-hidden border-2 border-[#1a0e06] ${activeTool === 'qc' ? 'hidden' : ''}`}
               style={{
                 background: '#8b5c30',
                 backgroundImage: [
