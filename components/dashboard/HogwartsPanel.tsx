@@ -5,13 +5,13 @@ import { Loader2, Send, ExternalLink } from 'lucide-react'
 import Image from 'next/image'
 
 const AGENTS = [
-  { name: 'DUMBLEDORE', role: 'Chief of Staff',        commands: ['/brief', '/eod', '/ask'],          color: 'purple', active: true, avatar: '/agents/dumbledore.jpg' },
-  { name: 'HERMIONE',   role: 'Production Controller', commands: ['/status', '/blockers'],             color: 'amber',  active: true, avatar: '/agents/hermione.jpg'   },
-  { name: 'HARRY',      role: 'Creative Review',       commands: ['/review', '/check-brief'],          color: 'red',    active: true, avatar: '/agents/harry.jpg'      },
-  { name: 'RON',        role: 'Strategic Ideation',    commands: ['/brainstorm', '/brief'],            color: 'orange', active: true, avatar: '/agents/ron.jpg'        },
-  { name: 'McGONAGALL', role: 'SOP Builder',           commands: ['/sop', '/workflow'],                color: 'green',  active: true, avatar: '/agents/mcgonagall.jpg' },
-  { name: 'SNAPE',      role: 'AI Scout',              commands: ['/ai-scout', '/ai-eval'],            color: 'slate',  active: true, avatar: '/agents/snape.jpg'      },
-  { name: 'HAGRID',     role: 'People Manager',        commands: ['/1on1-prep', '/feedback', '/team-pulse'], color: 'brown', active: true, avatar: '/agents/hagrid.jpg' },
+  { name: 'DUMBLEDORE', role: 'Chief of Staff',        commands: ['/brief', '/eod', '/ask'],          color: 'purple', active: true, avatar: '/agents/DUMBLEDORE_Cyborg.png' },
+  { name: 'HERMIONE',   role: 'Production Controller', commands: ['/status', '/blockers'],             color: 'amber',  active: true, avatar: '/agents/HERMIONE_Cyborg.png'   },
+  { name: 'HARRY',      role: 'Creative Review',       commands: ['/review', '/check-brief'],          color: 'red',    active: true, avatar: '/agents/HARRY_Cyborg.png'      },
+  { name: 'RON',        role: 'Strategic Ideation',    commands: ['/brainstorm', '/brief'],            color: 'orange', active: true, avatar: '/agents/RON_Cyborg.png'        },
+  { name: 'McGONAGALL', role: 'SOP Builder',           commands: ['/sop', '/workflow'],                color: 'green',  active: true, avatar: '/agents/McGONAGALL_Cyborg.png' },
+  { name: 'SNAPE',      role: 'AI Scout',              commands: ['/ai-scout', '/ai-eval'],            color: 'slate',  active: true, avatar: '/agents/SNAPE_Cyborg.png'      },
+  { name: 'HAGRID',     role: 'People Manager',        commands: ['/1on1-prep', '/feedback', '/team-pulse'], color: 'brown', active: true, avatar: '/agents/HAGRID_Cyborg.png' },
 ]
 
 const COLOR_MAP: Record<string, string> = {
