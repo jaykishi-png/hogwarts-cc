@@ -1,7 +1,5 @@
-import { OfficeShell } from '@/components/dashboard/OfficeShell'
-
-export const dynamic = 'force-dynamic'
+import { redirect } from 'next/navigation'
 
 export default function OfficePage() {
-  return <OfficeShell />
+  redirect('/hogwarts')
 }

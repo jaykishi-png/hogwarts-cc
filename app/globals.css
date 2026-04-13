@@ -47,6 +47,37 @@ body {
 .agent-walking .arm-right { animation: arm-swing-r 0.26s ease-in-out infinite alternate;        }
 .agent-walking .char-body { animation: body-bob    0.26s ease-in-out infinite;                  }
 
+/* ── Face animations ─────────────────────────────────────── */
+@keyframes blink {
+  0%, 82%, 100% { transform: scaleY(0);   }
+  88%, 95%      { transform: scaleY(1);   }
+}
+@keyframes look-side {
+  0%, 30%, 100% { transform: translateX(0);    }
+  40%, 55%      { transform: translateX(1.8px); }
+  65%, 80%      { transform: translateX(-1.8px);}
+}
+@keyframes mouth-talk {
+  0%, 100% { transform: scaleY(0.15); }
+  50%      { transform: scaleY(1);    }
+}
+@keyframes head-idle {
+  0%, 100% { transform: rotate(0deg);   }
+  25%      { transform: rotate(1.5deg); }
+  75%      { transform: rotate(-1.5deg);}
+}
+
+.eyelid   { transform-box: fill-box; transform-origin: center; }
+.eyelid-l { animation: blink    3.4s ease-in-out infinite;       }
+.eyelid-r { animation: blink    3.4s ease-in-out infinite 0.06s; }
+.pupils   { animation: look-side 5.5s ease-in-out infinite;      }
+.head-bob { animation: head-idle 4s   ease-in-out infinite;      }
+.mouth-talking {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: mouth-talk 0.36s ease-in-out infinite;
+}
+
 /* Status pulse */
 @keyframes status-glow {
   0%, 100% { opacity: 0.55; }

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
-import { LayoutDashboard, Building2 } from 'lucide-react'
+import { LayoutDashboard } from 'lucide-react'
 
 type TabKey = 'dashboard' | 'hogwarts' | 'office'
 
@@ -26,12 +26,6 @@ const TABS: { key: TabKey; label: string; href: string; icon: React.ReactNode }[
         className="rounded-sm object-cover object-top flex-shrink-0"
       />
     ),
-  },
-  {
-    key: 'office',
-    label: 'Office',
-    href: '/office',
-    icon: <Building2 size={12} />,
   },
 ]
 
