@@ -89,3 +89,35 @@ body {
 input[type="date"]::-webkit-calendar-picker-indicator {
   filter: invert(1) opacity(0.4);
 }
+
+/* ── Dark scrollbars (all overflow-y-auto panels) ───────────── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a2d3a #07080e;
+}
+*::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+*::-webkit-scrollbar-track {
+  background: #07080e;
+  border-radius: 2px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #2a2d3a;
+  border-radius: 2px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #3a3f52;
+}
+
+/* Suppress horizontal scrollbar on all panel scroll containers */
+.overflow-y-auto,
+[class*="overflow-y-auto"] {
+  overflow-x: hidden;
+}
+
+/* Prevent the root layout from ever showing a horizontal scrollbar */
+html, body {
+  overflow-x: hidden;
+}

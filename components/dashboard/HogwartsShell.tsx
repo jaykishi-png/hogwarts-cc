@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { NavTabs } from './NavTabs'
 import VideoQCProcessor from './VideoQCProcessor'
+import KnowledgePanel from './KnowledgePanel'
 import type { ComponentType } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -643,18 +644,39 @@ function Furniture({ roomId, occupied }: { roomId: RoomId; occupied: boolean }) 
 function SettingToggle({ label, sub, defaultOn = false, disabled = false }: { label: string; sub: string; defaultOn?: boolean; disabled?: boolean }) {
   const [on, setOn] = useState(defaultOn)
   return (
-    <div className={`flex items-center justify-between ${disabled ? 'opacity-40' : ''}`}>
-      <div>
-        <p className="text-[11px] text-gray-300">{label}</p>
-        <p className="text-[9px] text-gray-600">{sub}</p>
+    <div className={`flex items-center justify-between gap-3 ${disabled ? 'opacity-40' : ''}`}>
+      <div className="min-w-0">
+        <p className="text-[11px] text-gray-300 leading-tight">{label}</p>
+        <p className="text-[9px] text-gray-600 leading-tight">{sub}</p>
       </div>
       <button
         disabled={disabled}
         onClick={() => !disabled && setOn(p => !p)}
-        className={`w-8 h-4.5 rounded-full transition-colors relative flex-shrink-0 ${on ? 'bg-purple-700' : 'bg-[#1e2030]'}`}
-        style={{ height: 18, width: 32 }}
+        role="switch"
+        aria-checked={on}
+        style={{
+          flexShrink: 0,
+          width: 34,
+          height: 20,
+          borderRadius: 10,
+          position: 'relative',
+          background: on ? '#7c3aed' : '#1a1c2e',
+          border: `1px solid ${on ? '#9c59ff' : '#2e3050'}`,
+          cursor: disabled ? 'default' : 'pointer',
+          transition: 'background 0.18s, border-color 0.18s',
+        }}
       >
-        <span className={`absolute top-0.5 w-3.5 h-3.5 bg-white rounded-full transition-transform ${on ? 'translate-x-4' : 'translate-x-0.5'}`} />
+        <span style={{
+          position: 'absolute',
+          top: 2,
+          left: on ? 15 : 2,
+          width: 14,
+          height: 14,
+          borderRadius: '50%',
+          background: on ? '#ffffff' : '#4b5563',
+          transition: 'left 0.18s, background 0.18s',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.5)',
+        }} />
       </button>
     </div>
   )
@@ -664,10 +686,11 @@ function SettingToggle({ label, sub, defaultOn = false, disabled = false }: { la
 
 function LeftToolbar({ active, setActive }: { active: string; setActive: (k: string) => void }) {
   const tools: ({ key: string; icon: React.ElementType; label: string } | null)[] = [
-    { key: 'office',   icon: Monitor,       label: 'Office Map' },
-    { key: 'agents',   icon: Bot,           label: 'Agents' },
-    { key: 'chat',     icon: MessageSquare, label: 'Chat' },
-    { key: 'qc',       icon: Clapperboard,  label: 'Video QC' },
+    { key: 'office',    icon: Monitor,       label: 'Office Map' },
+    { key: 'agents',    icon: Bot,           label: 'Agents' },
+    { key: 'chat',      icon: MessageSquare, label: 'Chat' },
+    { key: 'qc',        icon: Clapperboard,  label: 'Video QC' },
+    { key: 'knowledge', icon: BookOpen,      label: 'Knowledge Base' },
     null,
     { key: 'env',      icon: Globe,         label: 'Environment' },
     { key: 'layout',   icon: Layers,        label: 'Layout' },
@@ -676,20 +699,20 @@ function LeftToolbar({ active, setActive }: { active: string; setActive: (k: str
     { key: 'settings', icon: Settings2,     label: 'Settings' },
   ]
   return (
-    <aside className="w-11 flex-shrink-0 flex flex-col items-center py-2 gap-0.5 bg-[#0a0c14] border-r border-[#1e2030]">
+    <aside className="w-11 flex-shrink-0 flex flex-col items-center py-2 gap-0 bg-[#0a0c14] border-r border-[#1e2030] overflow-y-auto overflow-x-hidden">
       {/* logo */}
       <div className="w-7 h-7 rounded-md bg-purple-900/60 border border-purple-800/50 flex items-center justify-center mb-2">
         <span className="text-[11px]">⚡</span>
       </div>
       {tools.map((t, i) =>
         t === null
-          ? <div key={i} className="w-6 h-px bg-[#1e2030] my-1 flex-shrink-0" />
+          ? <div key={i} className="w-6 h-px bg-[#1e2030] my-0.5 flex-shrink-0" />
           : (
             <button
               key={t.key}
               title={t.label}
               onClick={() => setActive(t.key)}
-              className={`w-9 h-9 flex items-center justify-center rounded-lg transition-all ${
+              className={`w-9 h-8 flex items-center justify-center rounded-lg transition-all flex-shrink-0 ${
                 active === t.key
                   ? 'bg-[#2a2d3a] text-gray-200 shadow-inner'
                   : 'text-gray-600 hover:text-gray-400 hover:bg-[#141824]'
@@ -1068,6 +1091,13 @@ export function HogwartsShell() {
       return
     }
 
+    // ── /rr command — Revenue Rush knowledge base ─────────────────────────
+    if (question.trim().toLowerCase().startsWith('/rr ') || question.trim().toLowerCase() === '/rr') {
+      setQuestion('')
+      setActiveTool('knowledge')
+      return
+    }
+
 
     setLoading(true); setChatError(''); setAnswer(''); setRespondingAgent(''); setActiveAgent(null)
     setBriefActive(false)
@@ -1136,14 +1166,17 @@ export function HogwartsShell() {
         <div className="flex-1 flex flex-col min-h-0 min-w-0">
 
           {/* ── Main canvas ─────────────────────────────────────────────────── */}
-          <main className="flex-1 min-h-0 flex gap-3 p-3">
+          <main className="flex-1 min-h-0 flex gap-3 p-3 overflow-hidden">
 
             {/* ── QC Panel ──────────────────────────────────────────────────── */}
             {activeTool === 'qc' && <VideoQCProcessor pushLog={pushLog} />}
 
+            {/* ── Knowledge Base Panel ───────────────────────────────────────── */}
+            {activeTool === 'knowledge' && <KnowledgePanel pushLog={pushLog} />}
+
             {/* ── Agents Panel ──────────────────────────────────────────────── */}
             {activeTool === 'agents' && (
-              <div className="flex-1 min-w-0 flex flex-col gap-3 min-h-0 overflow-y-auto">
+              <div className="flex-1 min-w-0 flex flex-col gap-3 min-h-0 overflow-y-auto overflow-x-hidden">
                 <div className="flex-shrink-0">
                   <p className="text-[10px] font-semibold text-gray-700 uppercase tracking-wider mb-2">Hogwarts AI Taskforce — 7 Agents</p>
                   <div className="grid grid-cols-1 gap-2">
@@ -1218,7 +1251,7 @@ export function HogwartsShell() {
                   ))}
                 </div>
                 {/* Full log */}
-                <div className="flex-1 min-h-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] overflow-y-auto">
+                <div className="flex-1 min-h-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] overflow-y-auto overflow-x-hidden">
                   <div className="p-3 space-y-1">
                     {log.length === 0 && <p className="text-[10px] text-gray-700 text-center py-4">No activity yet</p>}
                     {log.map((entry, i) => {
@@ -1240,7 +1273,7 @@ export function HogwartsShell() {
 
             {/* ── Environment Panel ─────────────────────────────────────────── */}
             {activeTool === 'env' && (
-              <div className="flex-1 min-w-0 flex flex-col gap-3 min-h-0 overflow-y-auto">
+              <div className="flex-1 min-w-0 flex flex-col gap-3 min-h-0 overflow-y-auto overflow-x-hidden">
                 <p className="flex-shrink-0 text-[10px] font-semibold text-gray-700 uppercase tracking-wider">Connected Integrations</p>
                 <div className="space-y-2">
                   {[
@@ -1285,7 +1318,7 @@ export function HogwartsShell() {
 
             {/* ── Layout Panel ──────────────────────────────────────────────── */}
             {activeTool === 'layout' && (
-              <div className="flex-1 min-w-0 flex flex-col gap-3 min-h-0 overflow-y-auto">
+              <div className="flex-1 min-w-0 flex flex-col gap-3 min-h-0 overflow-y-auto overflow-x-hidden">
                 <p className="flex-shrink-0 text-[10px] font-semibold text-gray-700 uppercase tracking-wider">Office Layout</p>
                 <div className="space-y-3">
                   {/* Room overview */}
@@ -1354,7 +1387,7 @@ export function HogwartsShell() {
 
             {/* ── Settings Panel ────────────────────────────────────────────── */}
             {activeTool === 'settings' && (
-              <div className="flex-1 min-w-0 flex flex-col gap-3 min-h-0 overflow-y-auto">
+              <div className="flex-1 min-w-0 flex flex-col gap-3 min-h-0 overflow-y-auto overflow-x-hidden">
                 <p className="flex-shrink-0 text-[10px] font-semibold text-gray-700 uppercase tracking-wider">Settings</p>
                 <div className="space-y-3">
                   <div className="bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-3 space-y-3">
@@ -1615,7 +1648,8 @@ export function HogwartsShell() {
                       className="rounded-xl object-cover object-top opacity-40" />
                     <p className="text-xs text-gray-600 leading-relaxed">
                       Ask a question or type <span className="text-purple-500 font-mono">/brief</span> for the team briefing.<br />
-                      Paste a Frame.io link with <span className="text-red-400 font-mono">/qc</span> for video QC.
+                      Paste a Frame.io link with <span className="text-red-400 font-mono">/qc</span> for video QC.<br />
+                      Type <span className="text-amber-400 font-mono">/rr</span> to open the Revenue Rush knowledge base.
                     </p>
                   </div>
                 )}
@@ -1690,6 +1724,14 @@ export function HogwartsShell() {
                     </span>
                   </div>
                 )}
+                {/* /rr hint — redirect to Knowledge panel */}
+                {question.trim().toLowerCase().startsWith('/rr') && (
+                  <div className="flex items-center px-1">
+                    <span className="text-[10px] text-amber-400 font-mono">
+                      Press Enter to open the 📚 Revenue Rush knowledge base
+                    </span>
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <input
                     id="hw-input"
@@ -1697,7 +1739,7 @@ export function HogwartsShell() {
                     value={question}
                     onChange={e => { setQuestion(e.target.value); if (!e.target.value.startsWith('@')) setActiveAgent(null) }}
                     onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask() } }}
-                    placeholder="@mention, ask anything, /brief, or /qc <frame.io url>…"
+                    placeholder="@mention, ask anything, /brief, /qc, or /rr for knowledge base…"
                     className="flex-1 bg-[#07080e] border border-[#1e2030] rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-700 focus:outline-none focus:border-purple-700/60 transition-colors"
                   />
                   <button
