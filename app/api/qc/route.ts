@@ -7,22 +7,14 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 // ─── Frame.io URL resolver (follows f.io short-link redirects) ───────────────
 
 async function resolveUrl(url: string): Promise<string> {
-  // f.io short links (e.g. https://f.io/tQcf9eqM) redirect to the real URL.
-  // Follow the redirect chain without downloading the body.
-  if (/f\.io\//.test(url)) {
-    try {
-      const res = await fetch(url, { method: 'HEAD', redirect: 'follow' })
-      return res.url || url
-    } catch {
-      // If HEAD fails try GET with redirect follow, abort early
-      try {
-        const controller = new AbortController()
-        const res = await fetch(url, { redirect: 'follow', signal: controller.signal })
-        controller.abort()
-        return res.url || url
-      } catch { /* fall through to original url */ }
-    }
-  }
+  if (!/f\.io\//.test(url)) return url
+  // Use redirect:'manual' so we can read the Location header directly —
+  // more reliable than redirect:'follow' whose res.url is env-dependent.
+  try {
+    const res      = await fetch(url, { method: 'GET', redirect: 'manual' })
+    const location = res.headers.get('location')
+    if (location) return location
+  } catch { /* fall through */ }
   return url
 }
 
@@ -67,23 +59,6 @@ async function frameioPost(path: string, body: Record<string, unknown>) {
   return res.json()
 }
 
-async function resolveAssetId(rawUrl: string): Promise<string> {
-  // Follow any short-link redirects first (f.io → app.frame.io/...)
-  const url    = await resolveUrl(rawUrl)
-  const parsed = parseFrameioUrl(url)
-  if (!parsed) throw new Error(`Could not parse Frame.io URL. Got: "${url}". Paste a review link (app.frame.io/reviews/…) or asset link (app.frame.io/projects/…/assets/…).`)
-
-  if (parsed.type === 'review') {
-    const review = await frameioGet(`/review_links/${parsed.id}`)
-    // Review link response: { assets: [{id, ...}] } or { asset_id: "..." }
-    const assetId = review.assets?.[0]?.id ?? review.asset_id
-    if (!assetId) throw new Error('Review link found but contains no assets.')
-    return assetId
-  }
-
-  return parsed.id
-}
-
 // ─── Frame type helpers ───────────────────────────────────────────────────────
 
 function formatDuration(seconds: number): string {
@@ -113,7 +88,24 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 1. Resolve to asset ────────────────────────────────────────────────
-    const assetId = await resolveAssetId(url)
+    const resolvedUrl = await resolveUrl(url)
+    const parsed      = parseFrameioUrl(resolvedUrl)
+    if (!parsed) {
+      return NextResponse.json(
+        { error: `Could not parse Frame.io URL.\n\nOriginal: ${url}\nResolved: ${resolvedUrl}\n\nExpected app.frame.io/reviews/… or app.frame.io/projects/…/assets/…` },
+        { status: 400 }
+      )
+    }
+
+    let assetId: string
+    if (parsed.type === 'review') {
+      const review = await frameioGet(`/review_links/${parsed.id}`)
+      assetId = review.assets?.[0]?.id ?? review.asset_id
+      if (!assetId) throw new Error('Review link found but contains no assets.')
+    } else {
+      assetId = parsed.id
+    }
+
     const asset   = await frameioGet(`/assets/${assetId}`)
 
     // ── 2. Pull existing comments (for context) ────────────────────────────
