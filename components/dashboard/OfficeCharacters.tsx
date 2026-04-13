@@ -6,17 +6,15 @@
  * Walking animation is driven by CSS classes on .leg-left, .leg-right, .arm-left, .arm-right
  */
 
-import { useState } from 'react'
-
 interface CharProps {
   avatar: string
   isWalking: boolean
   status: 'online' | 'working' | 'in-meeting' | 'away'
 }
 
-// Shared face circle using portrait image
+// Shared face circle — SVG <image> with circular clip
+// Note: SVG <image> doesn't fire onError in React, so we always render it
 function Face({ id, avatar, cx, cy, r }: { id: string; avatar: string; cx: number; cy: number; r: number }) {
-  const [failed, setFailed] = useState(false)
   return (
     <>
       <defs>
@@ -24,20 +22,17 @@ function Face({ id, avatar, cx, cy, r }: { id: string; avatar: string; cx: numbe
           <circle cx={cx} cy={cy} r={r} />
         </clipPath>
       </defs>
-      {failed ? (
-        <circle cx={cx} cy={cy} r={r} fill="#374151" />
-      ) : (
-        <image
-          href={avatar}
-          x={cx - r}
-          y={cy - r}
-          width={r * 2}
-          height={r * 2 * 1.3}
-          clipPath={`url(#face-${id})`}
-          preserveAspectRatio="xMidYMin slice"
-          onError={() => setFailed(true)}
-        />
-      )}
+      {/* Fallback circle behind image in case it doesn't load */}
+      <circle cx={cx} cy={cy} r={r} fill="#374151" />
+      <image
+        href={avatar}
+        x={cx - r}
+        y={cy - r}
+        width={r * 2}
+        height={r * 2 * 1.3}
+        clipPath={`url(#face-${id})`}
+        preserveAspectRatio="xMidYMin slice"
+      />
     </>
   )
 }

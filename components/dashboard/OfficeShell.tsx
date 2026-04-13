@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from 'react'
 import Image from 'next/image'
 import { format } from 'date-fns'
 import { NavTabs } from './NavTabs'
+import { Users, Zap, RotateCcw, Wifi, WifiOff } from 'lucide-react'
+import type { ComponentType } from 'react'
 import {
   DumbledoreCharacter,
   HermioneCharacter,
@@ -12,7 +14,7 @@ import {
   McGonagallCharacter,
   SnapeCharacter,
   HagridCharacter,
-} from './OfficeCharacters' from 'lucide-react'
+} from './OfficeCharacters'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -113,7 +115,7 @@ const GLOW: Record<string, string> = {
 
 // ─── Mini Character SVG ───────────────────────────────────────────────────────
 
-const CHARACTER_MAP: Record<string, React.ComponentType<{ avatar: string; isWalking: boolean; status: AgentState['status'] }>> = {
+const CHARACTER_MAP: Record<string, ComponentType<{ avatar: string; isWalking: boolean; status: AgentState['status'] }>> = {
   DUMBLEDORE: DumbledoreCharacter,
   HERMIONE:   HermioneCharacter,
   HARRY:      HarryCharacter,
