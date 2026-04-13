@@ -4,48 +4,43 @@ import OpenAI from 'openai'
 const FRAMEIO_BASE = 'https://api.frame.io/v2'
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
-// ─── Frame.io URL resolver (follows f.io short-link redirects) ───────────────
+// ─── URL resolution (follows f.io short-link redirects) ──────────────────────
 
-async function resolveUrl(url: string): Promise<string> {
-  if (!/f\.io\//.test(url)) return url
-  // Use redirect:'manual' so we can read the Location header directly —
-  // more reliable than redirect:'follow' whose res.url is env-dependent.
+async function resolveUrl(raw: string): Promise<string> {
+  if (!/f\.io\//.test(raw)) return raw
   try {
-    const res      = await fetch(url, { method: 'GET', redirect: 'manual' })
+    const res      = await fetch(raw, { method: 'GET', redirect: 'manual' })
     const location = res.headers.get('location')
     if (location) return location
   } catch { /* fall through */ }
-  return url
+  return raw
 }
 
-// ─── Frame.io URL parser ──────────────────────────────────────────────────────
+// ─── OG meta scraper — works on any public Frame.io page ─────────────────────
 
-function parseFrameioUrl(url: string): { type: 'review' | 'asset'; id: string } | null {
-  // next.frame.io direct asset link:
-  //   https://next.frame.io/project/{project_id}/view/{asset_id}
-  const nextViewMatch = url.match(/next\.frame\.io\/project\/[^/]+\/view\/([0-9a-f-]{36})/i)
-  if (nextViewMatch) return { type: 'asset', id: nextViewMatch[1] }
+interface OGMeta { title: string; thumbUrl: string | null; description: string }
 
-  // next.frame.io share / f.io short-link resolved:
-  //   https://next.frame.io/share/{uuid}
-  const nextShareMatch = url.match(/next\.frame\.io\/share\/([a-zA-Z0-9_-]+)/)
-  if (nextShareMatch) return { type: 'review', id: nextShareMatch[1] }
+async function scrapeOgMeta(url: string): Promise<OGMeta> {
+  const res  = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; HogwartsQC/1.0)' },
+    redirect: 'follow',
+  })
+  const html = await res.text()
 
-  // Legacy app.frame.io review link:
-  //   https://app.frame.io/reviews/{uuid}
-  const legacyReviewMatch = url.match(/app\.frame\.io\/reviews\/([a-zA-Z0-9_-]+)/)
-  if (legacyReviewMatch) return { type: 'review', id: legacyReviewMatch[1] }
+  function getMeta(property: string): string {
+    const m = html.match(new RegExp(`<meta[^>]+(?:property|name)=["']${property}["'][^>]+content=["']([^"']+)["']`, 'i'))
+             ?? html.match(new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${property}["']`, 'i'))
+    return m?.[1] ?? ''
+  }
 
-  // Legacy app.frame.io direct asset link:
-  //   https://app.frame.io/projects/.../assets/{uuid}
-  //   https://app.frame.io/player/{uuid}
-  const assetMatch = url.match(/(?:assets|player)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i)
-  if (assetMatch) return { type: 'asset', id: assetMatch[1] }
-
-  return null
+  return {
+    title:    getMeta('og:title') || getMeta('twitter:title') || 'Untitled',
+    thumbUrl: getMeta('og:image') || getMeta('twitter:image') || null,
+    description: getMeta('og:description') || getMeta('twitter:description') || '',
+  }
 }
 
-// ─── Frame.io API helpers ─────────────────────────────────────────────────────
+// ─── Frame.io v2 API helpers ──────────────────────────────────────────────────
 
 async function frameioGet(path: string) {
   const res = await fetch(`${FRAMEIO_BASE}${path}`, {
@@ -53,14 +48,7 @@ async function frameioGet(path: string) {
   })
   if (!res.ok) {
     const body = await res.text().catch(() => '')
-    if (res.status === 403) {
-      throw new Error(
-        `Frame.io 403: Your token doesn't have access to this asset.\n\n` +
-        `This usually means your token was created under a different team/workspace than the one that owns this video.\n\n` +
-        `Fix: Go to developer.frame.io → delete your current token → create a new one while logged into the correct team.`
-      )
-    }
-    throw new Error(`Frame.io ${res.status}: ${body.slice(0, 200)}`)
+    throw new Error(`Frame.io ${res.status}: ${body.slice(0, 120)}`)
   }
   return res.json()
 }
@@ -78,19 +66,37 @@ async function frameioPost(path: string, body: Record<string, unknown>) {
   return res.json()
 }
 
-// ─── Frame type helpers ───────────────────────────────────────────────────────
+// ─── URL parser ───────────────────────────────────────────────────────────────
 
-function formatDuration(seconds: number): string {
-  if (!seconds) return 'unknown'
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  return `${m}:${s.toString().padStart(2, '0')}`
+function parseFrameioUrl(url: string): { type: 'review' | 'asset'; id: string } | null {
+  // next.frame.io/project/{project_id}/view/{asset_id}
+  const nextView = url.match(/next\.frame\.io\/project\/[^/]+\/view\/([0-9a-f-]{36})/i)
+  if (nextView) return { type: 'asset', id: nextView[1] }
+
+  // next.frame.io/share/{uuid}
+  const nextShare = url.match(/next\.frame\.io\/share\/([a-zA-Z0-9_-]+)/)
+  if (nextShare) return { type: 'review', id: nextShare[1] }
+
+  // app.frame.io/reviews/{uuid}
+  const legacyReview = url.match(/app\.frame\.io\/reviews\/([a-zA-Z0-9_-]+)/)
+  if (legacyReview) return { type: 'review', id: legacyReview[1] }
+
+  // app.frame.io/projects/.../assets/{uuid} or /player/{uuid}
+  const legacyAsset = url.match(/(?:assets|player)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i)
+  if (legacyAsset) return { type: 'asset', id: legacyAsset[1] }
+
+  return null
 }
 
-function formatFilesize(bytes: number): string {
-  if (!bytes) return 'unknown'
-  if (bytes > 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(1)} GB`
-  return `${(bytes / 1_000_000).toFixed(1)} MB`
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatDuration(s: number) {
+  if (!s) return 'unknown'
+  return `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, '0')}`
+}
+function formatFilesize(b: number) {
+  if (!b) return 'unknown'
+  return b > 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${(b / 1e6).toFixed(1)} MB`
 }
 
 // ─── POST /api/qc ─────────────────────────────────────────────────────────────
@@ -99,162 +105,166 @@ export async function POST(req: NextRequest) {
   try {
     const { url, postComment = false } = await req.json()
 
-    if (!process.env.FRAMEIO_TOKEN || process.env.FRAMEIO_TOKEN === 'your-frameio-token-here') {
-      return NextResponse.json(
-        { error: 'FRAMEIO_TOKEN not configured. Add it to .env.local and restart the dev server.' },
-        { status: 500 }
-      )
-    }
-
-    // ── 1. Resolve to asset ────────────────────────────────────────────────
+    // ── 1. Resolve URL (follow f.io redirects) ─────────────────────────────
     const resolvedUrl = await resolveUrl(url)
-    const parsed      = parseFrameioUrl(resolvedUrl)
-    if (!parsed) {
-      return NextResponse.json(
-        { error: `Could not parse Frame.io URL.\n\nOriginal: ${url}\nResolved: ${resolvedUrl}\n\nExpected app.frame.io/reviews/… or app.frame.io/projects/…/assets/…` },
-        { status: 400 }
-      )
-    }
 
-    // ── Resolve UUID → asset ID ────────────────────────────────────────────
-    // next.frame.io/share UUIDs may be direct asset IDs OR review link IDs.
-    // Try review_links first; fall back to treating the UUID as an asset ID.
-    let assetId: string
-    if (parsed.type === 'review') {
-      try {
-        const review = await frameioGet(`/review_links/${parsed.id}`)
-        assetId = review.assets?.[0]?.id ?? review.asset_id
-        if (!assetId) throw new Error('empty')
-      } catch {
-        // review_links endpoint failed — try the UUID directly as an asset
-        assetId = parsed.id
-      }
-    } else {
-      assetId = parsed.id
-    }
-
-    const asset = await frameioGet(`/assets/${assetId}`)
-
-    // ── 2. Pull existing comments (for context) ────────────────────────────
+    // ── 2. Try Frame.io v2 API first; fall back to OG scraping ────────────
+    let thumbUrl:    string | null = null
+    let assetName:   string        = 'Video'
+    let transcript:  string | null = null
+    let assetId:     string | null = null
+    let metaBlock:   string        = ''
     let existingComments: string[] = []
-    try {
-      const commentsData = await frameioGet(`/assets/${assetId}/comments`)
-      existingComments = (commentsData ?? [])
-        .slice(0, 20)
-        .map((c: { text?: string; author?: { name?: string }; timestamp?: number }) =>
-          `[${c.author?.name ?? 'Reviewer'} @ ${c.timestamp != null ? formatDuration(c.timestamp) : '?'}s]: ${c.text ?? ''}`
+    let usedApi = false
+
+    const parsed = parseFrameioUrl(resolvedUrl)
+
+    if (parsed) {
+      try {
+        // Attempt v2 API resolution
+        let resolvedAssetId = parsed.id
+        if (parsed.type === 'review') {
+          try {
+            const review = await frameioGet(`/review_links/${parsed.id}`)
+            resolvedAssetId = review.assets?.[0]?.id ?? review.asset_id ?? parsed.id
+          } catch { /* fall through to direct asset lookup */ }
+        }
+
+        const asset = await frameioGet(`/assets/${resolvedAssetId}`)
+        assetId   = resolvedAssetId
+        usedApi   = true
+        assetName = asset.name ?? 'Untitled'
+        thumbUrl  = asset.thumb_orig ?? asset.image_full ?? asset.image_128 ?? null
+        transcript = asset.transcription ?? asset.transcription_text ?? null
+
+        const meta = {
+          name:       assetName,
+          duration:   formatDuration(asset.duration),
+          fps:        asset.fps ?? asset.framerate ?? 'unknown',
+          resolution: asset.original
+            ? `${asset.original.width} × ${asset.original.height}`
+            : asset.dimensions
+              ? `${asset.dimensions.width} × ${asset.dimensions.height}`
+              : 'unknown',
+          filesize:  formatFilesize(asset.filesize),
+          uploadedAt: asset.uploaded_at ? new Date(asset.uploaded_at).toLocaleDateString() : 'unknown',
+        }
+        metaBlock = [
+          `- **File:** ${meta.name}`,
+          `- **Duration:** ${meta.duration}`,
+          `- **Resolution:** ${meta.resolution}`,
+          `- **FPS:** ${meta.fps}`,
+          `- **File size:** ${meta.filesize}`,
+          `- **Upload date:** ${meta.uploadedAt}`,
+        ].join('\n')
+
+        // Pull existing comments
+        try {
+          const cd = await frameioGet(`/assets/${assetId}/comments`)
+          existingComments = (cd ?? []).slice(0, 20).map(
+            (c: { text?: string; author?: { name?: string }; timestamp?: number }) =>
+              `[${c.author?.name ?? 'Reviewer'} @ ${c.timestamp != null ? formatDuration(c.timestamp) : '?'}s]: ${c.text ?? ''}`
+          )
+        } catch { /* not fatal */ }
+
+      } catch {
+        // API failed — fall through to OG scraping below
+      }
+    }
+
+    // ── 3. OG scrape fallback (no API token required) ──────────────────────
+    if (!usedApi) {
+      try {
+        const og  = await scrapeOgMeta(resolvedUrl)
+        thumbUrl  = og.thumbUrl
+        assetName = og.title
+        metaBlock = [
+          `- **File:** ${og.title}`,
+          `- **Source:** ${resolvedUrl}`,
+          `- **Duration / FPS / filesize:** _not available (public share link — no API access)_`,
+          og.description ? `- **Description:** ${og.description}` : '',
+        ].filter(Boolean).join('\n')
+      } catch (scrapeErr) {
+        return NextResponse.json(
+          { error: `Could not access this Frame.io link via API or public page.\n\nResolved URL: ${resolvedUrl}\n\nMake sure the link is publicly shared, or paste the direct app.frame.io asset URL.` },
+          { status: 400 }
         )
-    } catch {
-      // comments endpoint may be empty — not fatal
+      }
     }
 
-    // ── 3. Build metadata summary ──────────────────────────────────────────
-    const meta = {
-      name:       asset.name ?? 'Untitled',
-      duration:   formatDuration(asset.duration),
-      fps:        asset.fps ?? asset.framerate ?? 'unknown',
-      resolution: asset.original
-        ? `${asset.original.width ?? '?'} × ${asset.original.height ?? '?'}`
-        : asset.dimensions
-          ? `${asset.dimensions.width} × ${asset.dimensions.height}`
-          : 'unknown',
-      filesize:   formatFilesize(asset.filesize),
-      status:     asset.status ?? 'unknown',
-      uploadedAt: asset.uploaded_at ? new Date(asset.uploaded_at).toLocaleDateString() : 'unknown',
-    }
-
-    // ── 4. Visual QC via GPT-4o Vision (thumbnail frame) ──────────────────
-    const thumbUrl: string | null =
-      asset.thumb_orig ?? asset.image_full ?? asset.image_128 ?? null
-
+    // ── 4. Visual QC — GPT-4o Vision on thumbnail ─────────────────────────
     let visualSection = '_No thumbnail available for visual analysis._'
-
     if (thumbUrl) {
       const visionRes = await openai.chat.completions.create({
         model: 'gpt-4o',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: `You are a senior video editor performing quality control on a production video. Analyze this frame carefully for:
+        messages: [{
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: `You are a senior video editor performing quality control on a production video. Analyze this frame carefully for:
 
 1. **On-screen text / titles / lower thirds** — typos, wrong fonts, misalignment, readability issues
 2. **Exposure** — overexposed, underexposed, crushed blacks, blown highlights
 3. **Framing & composition** — cut-off subjects, poor rule-of-thirds, tilted horizon
 4. **Color grading** — unnatural skin tones, inconsistent color, heavy color cast
 5. **Visual artifacts** — compression blocks, moire, noise, motion blur
-6. **Safe zones** — titles or key subjects too close to the edge
+6. **Safe zones** — titles or key subjects too close to frame edge
 
-For each category: state PASS ✅, ISSUE ⚠️, or N/A. Be specific about any issues. If a frame looks professionally done, say so.`,
-              },
-              { type: 'image_url', image_url: { url: thumbUrl, detail: 'high' } },
-            ],
-          },
-        ],
+For each: PASS ✅, ISSUE ⚠️, or N/A. Be specific. If the frame looks professionally done, say so.`,
+            },
+            { type: 'image_url', image_url: { url: thumbUrl, detail: 'high' } },
+          ],
+        }],
         max_tokens: 600,
       })
       visualSection = visionRes.choices[0].message.content ?? visualSection
     }
 
-    // ── 5. Audio / dialogue QC via transcript ──────────────────────────────
-    const transcript: string | null =
-      asset.transcription ?? asset.transcription_text ?? null
-
-    let audioSection = '_No transcript found. Enable transcription in Frame.io to get audio QC._'
-
+    // ── 5. Audio QC — transcript analysis ────────────────────────────────
+    let audioSection = '_No transcript available._'
     if (transcript) {
       const audioRes = await openai.chat.completions.create({
         model: 'gpt-4o',
-        messages: [
-          {
-            role: 'user',
-            content: `You are a senior video editor checking a transcript for audio and dialogue quality issues.
+        messages: [{
+          role: 'user',
+          content: `You are a senior video editor checking a transcript for audio and dialogue quality issues.
 
 Check for:
-1. **Filler words** — um, uh, like, you know, basically, literally (count occurrences; flag if > 5)
-2. **Repeated phrases** — exact sentences or phrases appearing twice (possible accidental edit loop)
-3. **Abrupt sentence cut-offs** — sentences that end mid-word or trail off unnaturally
-4. **Inaudible / missing audio** — [inaudible], [silence], [crosstalk] markers, or long gaps
-5. **Inconsistent speaker clarity** — sudden volume drops or garbled passages
-6. **Content errors** — obvious factual slips, wrong names, or garbled numbers
+1. **Filler words** — um, uh, like, you know, basically (flag if > 5 occurrences)
+2. **Repeated phrases** — exact sentences appearing twice (possible edit loop)
+3. **Abrupt cut-offs** — sentences ending mid-word or trailing off unnaturally
+4. **Inaudible / missing audio** — [inaudible], [silence], [crosstalk] markers
+5. **Content errors** — wrong names, garbled numbers, factual slips
 
-For each: PASS ✅, ISSUE ⚠️, or N/A. Include relevant transcript snippets for any issues found.
+For each: PASS ✅, ISSUE ⚠️, or N/A. Include relevant snippets for any issues.
 
 Transcript:
 ${transcript.slice(0, 4000)}`,
-          },
-        ],
+        }],
         max_tokens: 700,
       })
       audioSection = audioRes.choices[0].message.content ?? audioSection
     }
 
-    // ── 6. HARRY synthesises the final QC report ───────────────────────────
+    // ── 6. HARRY synthesises the report ───────────────────────────────────
     const commentsBlock = existingComments.length
       ? `\n## Existing Review Comments\n${existingComments.join('\n')}`
-      : '\n_No existing review comments._'
+      : ''
 
     const reportRes = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
         {
           role: 'system',
-          content: `You are HARRY, a creative review agent and senior video editor. You write clear, professional, actionable QC reports. Use markdown formatting.`,
+          content: `You are HARRY, a creative review agent and senior video editor. You write clear, professional, actionable QC reports in markdown.`,
         },
         {
           role: 'user',
-          content: `Write a QC report for "${meta.name}" based on the analysis below.
+          content: `Write a QC report for "${assetName}".
 
 ## Technical Metadata
-- **File:** ${meta.name}
-- **Duration:** ${meta.duration}
-- **Resolution:** ${meta.resolution}
-- **FPS:** ${meta.fps}
-- **File size:** ${meta.filesize}
-- **Upload date:** ${meta.uploadedAt}
-- **Status:** ${meta.status}
+${metaBlock}
 
 ## Visual Analysis (thumbnail frame)
 ${visualSection}
@@ -264,7 +274,7 @@ ${audioSection}
 ${commentsBlock}
 
 ---
-Write the report with this exact structure:
+Use this exact structure:
 
 # QC Report — [video name]
 
@@ -274,16 +284,16 @@ Write the report with this exact structure:
 ---
 
 ## Technical
-[1–3 sentences on specs — flag if resolution, fps, or filesize is wrong for delivery]
+[1–3 sentences. Flag wrong resolution, fps, or filesize for delivery.]
 
 ## Visual
-[Summarise vision findings clearly. Flag specific issues with ⚠️]
+[Summarise vision findings. Flag issues with ⚠️]
 
 ## Audio
 [Summarise audio findings. Flag issues with ⚠️]
 
 ## Recommended Actions
-- [Bullet list. Only include if there are actual issues. If clean, write "No actions required — file is ready for delivery."]
+- [Bullet list of specific fixes. If no issues: "No actions required — file is ready for delivery."]
 
 ---
 *Note: Visual analysis is based on a single thumbnail frame. Full jump-cut and scene consistency checks require frame-by-frame review.*`,
@@ -294,26 +304,24 @@ Write the report with this exact structure:
 
     const report = reportRes.choices[0].message.content ?? '(no report generated)'
 
-    // ── 7. Optionally post report back as Frame.io comment ─────────────────
-    if (postComment) {
+    // ── 7. Optionally post back to Frame.io as a comment ──────────────────
+    if (postComment && assetId) {
       try {
         const summary = report.slice(0, 300).replace(/[#*`]/g, '').trim()
         await frameioPost(`/assets/${assetId}/comments`, {
-          text: `🤖 QC Report (HARRY)\n\n${summary}\n\n[Full report generated via Hogwarts dashboard]`,
+          text: `🤖 QC Report (HARRY)\n\n${summary}\n\n[Full report via Hogwarts dashboard]`,
         })
-      } catch {
-        // Comment posting failed — non-fatal, still return the report
-      }
+      } catch { /* non-fatal */ }
     }
 
     return NextResponse.json({
       answer:    report,
       agent:     'HARRY',
       color:     'red',
-      assetName: meta.name,
-      duration:  meta.duration,
+      assetName,
       assetId,
     })
+
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err)
     return NextResponse.json({ error: message }, { status: 500 })
