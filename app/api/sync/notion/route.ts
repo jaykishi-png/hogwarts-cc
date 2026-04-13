@@ -40,7 +40,7 @@ export async function POST(_req: NextRequest) {
         }
 
         // Reflect Notion "Done" status locally
-        const doneStatuses = ['done', 'complete', 'completed', 'finished']
+        const doneStatuses = ['done', 'complete', 'completed', 'finished', 'sent']
         if (doneStatuses.some(s => nt.status.includes(s)) && existing.status !== 'done') {
           updates.status = 'done'
           updates.completed_at = new Date().toISOString()
