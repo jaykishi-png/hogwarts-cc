@@ -100,16 +100,24 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // ── Resolve UUID → asset ID ────────────────────────────────────────────
+    // next.frame.io/share UUIDs may be direct asset IDs OR review link IDs.
+    // Try review_links first; fall back to treating the UUID as an asset ID.
     let assetId: string
     if (parsed.type === 'review') {
-      const review = await frameioGet(`/review_links/${parsed.id}`)
-      assetId = review.assets?.[0]?.id ?? review.asset_id
-      if (!assetId) throw new Error('Review link found but contains no assets.')
+      try {
+        const review = await frameioGet(`/review_links/${parsed.id}`)
+        assetId = review.assets?.[0]?.id ?? review.asset_id
+        if (!assetId) throw new Error('empty')
+      } catch {
+        // review_links endpoint failed — try the UUID directly as an asset
+        assetId = parsed.id
+      }
     } else {
       assetId = parsed.id
     }
 
-    const asset   = await frameioGet(`/assets/${assetId}`)
+    const asset = await frameioGet(`/assets/${assetId}`)
 
     // ── 2. Pull existing comments (for context) ────────────────────────────
     let existingComments: string[] = []
