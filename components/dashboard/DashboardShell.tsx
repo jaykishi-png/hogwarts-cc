@@ -18,6 +18,7 @@ import { CompletedToday } from './CompletedToday'
 import { BottleneckView } from './BottleneckView'
 import { QuickAdd } from './QuickAdd'
 import { HogwartsPanel } from './HogwartsPanel'
+import { EodTasksPanel } from './EodTasksPanel'
 import { SyncStatus } from '@/components/ui/SyncStatus'
 import { KeyboardShortcutsHelp } from '@/components/ui/KeyboardShortcutsHelp'
 import type { SyncLogEntry } from '@/types/sync'
@@ -290,6 +291,11 @@ export function DashboardShell() {
                 </div>
               </div>
 
+            </div>
+
+            {/* Jay's EOD Tasks from Notion */}
+            <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
+              <EodTasksPanel />
             </div>
 
             {/* Hogwarts Agent Panel */}
