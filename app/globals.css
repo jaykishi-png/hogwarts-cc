@@ -17,6 +17,16 @@ body {
   color: var(--foreground);
 }
 
+/* Agent walking animation */
+@keyframes agent-walk {
+  0%, 100% { transform: translate(-50%, -50%) translateY(0px) }
+  25%       { transform: translate(-50%, -50%) translateY(-3px) rotate(-2deg) }
+  75%       { transform: translate(-50%, -50%) translateY(-3px) rotate(2deg) }
+}
+.agent-walking {
+  animation: agent-walk 0.35s ease-in-out infinite;
+}
+
 /* Dark date input */
 input[type="date"]::-webkit-calendar-picker-indicator {
   filter: invert(1) opacity(0.4);
