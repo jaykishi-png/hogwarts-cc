@@ -61,7 +61,43 @@ interface AgentState {
   name: string; role: string; homeRoom: RoomId; currentRoom: RoomId
   status: AgentStatus; color: string; avatar: string
 }
-interface LogEntry { time: string; msg: string; type: 'move' | 'status' | 'meeting' | 'chat' }
+interface LogEntry  { time: string; msg: string; type: 'move' | 'status' | 'meeting' | 'chat' }
+interface BriefEntry { agent: string; role: string; color: string; avatar: string; text: string; loading: boolean }
+
+// ─── /brief command — agent sequence + prompts ────────────────────────────────
+
+const BRIEF_SEQUENCE: { name: string; role: string; color: string; avatar: string; prompt: string }[] = [
+  {
+    name: 'SNAPE', role: 'AI Scout — tech & tools', color: 'slate',
+    avatar: '/agents/SNAPE_Cyborg.png',
+    prompt: 'You are contributing to an end-of-week executive brief. In 3–4 sentences MAX, report on the most relevant AI tools or tech updates from this week that matter for content production, video editing, or marketing ops. Be specific and ruthlessly concise.',
+  },
+  {
+    name: 'HERMIONE', role: 'Production — status & risks', color: 'amber',
+    avatar: '/agents/HERMIONE_Cyborg.png',
+    prompt: 'You are contributing to an end-of-week executive brief. In 3–4 sentences MAX, summarise production status: what shipped, what is blocked, and any timeline or capacity risks to flag right now.',
+  },
+  {
+    name: 'HARRY', role: 'Creative — quality & brand', color: 'red',
+    avatar: '/agents/HARRY_Cyborg.png',
+    prompt: 'You are contributing to an end-of-week executive brief. In 3–4 sentences MAX, review creative output quality this week across Revenue Rush and The Process. Call out anything that missed the brief or needs a re-do.',
+  },
+  {
+    name: 'RON', role: 'Strategy — ideas & angles', color: 'orange',
+    avatar: '/agents/RON_Cyborg.png',
+    prompt: 'You are contributing to an end-of-week executive brief. In 3–4 sentences MAX, name the top 1–2 strategic opportunities or campaign angles worth pursuing next week. Be specific enough for a brief.',
+  },
+  {
+    name: 'McGONAGALL', role: 'Ops — workflow gaps', color: 'green',
+    avatar: '/agents/McGONAGALL_Cyborg.png',
+    prompt: 'You are contributing to an end-of-week executive brief. In 3–4 sentences MAX, identify the #1 workflow or process gap observed this week and give a concrete fix Jay can implement immediately.',
+  },
+  {
+    name: 'HAGRID', role: 'People — team health', color: 'brown',
+    avatar: '/agents/HAGRID_Cyborg.png',
+    prompt: 'You are contributing to an end-of-week executive brief. In 3–4 sentences MAX, give a team health snapshot: capacity, morale signal, and the one specific thing Jay should acknowledge or address with the team.',
+  },
+]
 
 // ─── Position maps (% of floor plan) ─────────────────────────────────────────
 
@@ -797,6 +833,12 @@ export function HogwartsShell() {
   const [activeAgent, setActiveAgent]   = useState<string | null>(null)
   const [responseId, setResponseId]     = useState(0)
 
+  // ── Brief state ─────────────────────────────────────────────────────────
+  const [briefActive, setBriefActive]   = useState(false)
+  const [briefEntries, setBriefEntries] = useState<BriefEntry[]>([])
+  const [briefDone, setBriefDone]       = useState(false)
+  const briefScrollRef = useRef<HTMLDivElement>(null)
+
   // ── UI state ────────────────────────────────────────────────────────────
   const [activeTool, setActiveTool]     = useState('office')
   const [activeBotTab, setActiveBotTab] = useState('environment')
@@ -857,6 +899,115 @@ export function HogwartsShell() {
     setTimeout(() => setAgents(p => p.map(a => a.status === 'working' ? { ...a, status: 'online' } : a)), 6000)
   }
 
+  // ── /brief — sequential multi-agent briefing ──────────────────────────────
+  async function runBrief() {
+    setBriefActive(true)
+    setBriefDone(false)
+    setBriefEntries([])
+    setAnswer('')
+    setChatError('')
+
+    // Move all specialist agents to the conference room to kick things off
+    const specialistNames = BRIEF_SEQUENCE.map(s => s.name)
+    startMoving(specialistNames)
+    setAgents(p => p.map(a =>
+      specialistNames.includes(a.name) ? { ...a, currentRoom: 'great-hall', status: 'in-meeting' } : a
+    ))
+    pushLog('📋 /brief initiated — all agents assembling.', 'meeting')
+
+    // Small stagger so the walking animations look natural
+    await new Promise(r => setTimeout(r, 700))
+
+    const collected: { name: string; text: string }[] = []
+
+    for (const step of BRIEF_SEQUENCE) {
+      // Add a loading card for this agent
+      setBriefEntries(p => [
+        ...p,
+        { agent: step.name, role: step.role, color: step.color, avatar: step.avatar, text: '', loading: true },
+      ])
+      // Scroll to the new card
+      setTimeout(() => {
+        briefScrollRef.current?.scrollTo({ top: briefScrollRef.current.scrollHeight, behavior: 'smooth' })
+      }, 50)
+
+      // Call the API with a forced @mention so the correct agent responds
+      let text = ''
+      try {
+        const res  = await fetch('/api/agents/ask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: `@${step.name.toLowerCase()} ${step.prompt}` }),
+        })
+        const data = await res.json()
+        text = data.answer ?? '(no response)'
+      } catch {
+        text = '(error fetching response)'
+      }
+
+      collected.push({ name: step.name, text })
+      setBriefEntries(p => p.map(e => e.agent === step.name ? { ...e, text, loading: false } : e))
+      setTimeout(() => {
+        briefScrollRef.current?.scrollTo({ top: briefScrollRef.current.scrollHeight, behavior: 'smooth' })
+      }, 50)
+    }
+
+    // ── Dumbledore synthesis ─────────────────────────────────────────────────
+    setBriefEntries(p => [
+      ...p,
+      { agent: 'DUMBLEDORE', role: 'Executive synthesis', color: 'purple', avatar: '/agents/DUMBLEDORE_Cyborg.png', text: '', loading: true },
+    ])
+    startMoving(['DUMBLEDORE'])
+    setAgents(p => p.map(a => a.name === 'DUMBLEDORE' ? { ...a, currentRoom: 'great-hall', status: 'in-meeting' } : a))
+    pushLog('DUMBLEDORE synthesising the brief.', 'chat')
+    setTimeout(() => {
+      briefScrollRef.current?.scrollTo({ top: briefScrollRef.current.scrollHeight, behavior: 'smooth' })
+    }, 50)
+
+    const synthesisPrompt = [
+      'Here are this week\'s team reports:',
+      '',
+      ...collected.map(c => `**${c.name}:** ${c.text}`),
+      '',
+      'Now write the executive brief synthesizing all of the above. Use these exact sections:',
+      '🔮 HIGHLIGHTS — top 2–3 wins or notable moments',
+      '⚠️ RISKS & BLOCKERS — what needs Jay\'s immediate attention',
+      '🎯 FOCUS — the single #1 priority for next week',
+      '👥 TEAM HEALTH — one sentence',
+      '🚀 NEXT WEEK — exactly 3 action bullets',
+      '',
+      'Be direct, sharp, and actionable. Jay reads this in under 60 seconds.',
+    ].join('\n')
+
+    let synthesis = ''
+    try {
+      const synthRes  = await fetch('/api/agents/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: `@dumbledore ${synthesisPrompt}` }),
+      })
+      const synthData = await synthRes.json()
+      synthesis = synthData.answer ?? '(no response)'
+    } catch {
+      synthesis = '(error fetching synthesis)'
+    }
+
+    setBriefEntries(p => p.map(e => e.agent === 'DUMBLEDORE' ? { ...e, text: synthesis, loading: false } : e))
+    setBriefDone(true)
+    pushLog('📋 /brief complete — executive brief ready.', 'meeting')
+    setTimeout(() => {
+      briefScrollRef.current?.scrollTo({ top: briefScrollRef.current.scrollHeight, behavior: 'smooth' })
+    }, 50)
+
+    // Return everyone to their desks after 60 s
+    setTimeout(() => {
+      const allNames = [...specialistNames, 'DUMBLEDORE']
+      startMoving(allNames)
+      setAgents(p => p.map(a => ({ ...a, currentRoom: a.homeRoom, status: 'online' })))
+      pushLog('Brief done — agents back to their desks.', 'move')
+    }, 60_000)
+  }
+
   // ── Chat helpers ─────────────────────────────────────────────────────────
   function mentionAgent(name: string) {
     setQuestion(`@${name.toLowerCase()} `)
@@ -866,7 +1017,16 @@ export function HogwartsShell() {
 
   async function ask() {
     if (!question.trim() || loading) return
+
+    // ── /brief command ────────────────────────────────────────────────────
+    if (question.trim().toLowerCase() === '/brief') {
+      setQuestion('')
+      runBrief()
+      return
+    }
+
     setLoading(true); setChatError(''); setAnswer(''); setRespondingAgent(''); setActiveAgent(null)
+    setBriefActive(false)
     const q = question
     pushLog(`You: "${q.slice(0, 60)}${q.length > 60 ? '…' : ''}"`, 'chat')
     try {
@@ -1054,30 +1214,102 @@ export function HogwartsShell() {
                 </div>
               </div>
 
-              {/* Chat response area */}
-              <div className="flex-1 min-h-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] overflow-y-auto p-3
-                [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-track]:bg-transparent
-                [&::-webkit-scrollbar-thumb]:bg-[#2a2d3a] [&::-webkit-scrollbar-thumb]:rounded-full">
-                {!answer && !chatError && !loading && (
+              {/* ── Response area: brief thread OR single answer ──────────── */}
+              <div
+                ref={briefScrollRef}
+                className="flex-1 min-h-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] overflow-y-auto p-3
+                  [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-track]:bg-transparent
+                  [&::-webkit-scrollbar-thumb]:bg-[#2a2d3a] [&::-webkit-scrollbar-thumb]:rounded-full"
+              >
+
+                {/* ── /brief thread ──────────────────────────────────────── */}
+                {briefActive && (
+                  <div className="space-y-2">
+                    {/* header */}
+                    <div className="flex items-center gap-2 pb-2 border-b border-[#1e2030]">
+                      <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest">📋 End-of-Week Brief</span>
+                      {!briefDone && <Loader2 size={10} className="animate-spin text-purple-500 ml-auto" />}
+                      {briefDone && (
+                        <button
+                          onClick={() => {
+                            const text = briefEntries.map(e => `— ${e.agent} (${e.role})\n${e.text}`).join('\n\n')
+                            navigator.clipboard.writeText(text)
+                          }}
+                          className="ml-auto text-[9px] text-gray-500 hover:text-gray-300 border border-[#2a2d3a] rounded px-2 py-0.5 transition-colors"
+                        >
+                          Copy brief
+                        </button>
+                      )}
+                    </div>
+
+                    {/* agent report cards */}
+                    {briefEntries.map((entry, i) => {
+                      const isDumbledore = entry.agent === 'DUMBLEDORE'
+                      return (
+                        <div
+                          key={i}
+                          className={`rounded-lg border p-2.5 transition-all ${
+                            isDumbledore
+                              ? 'border-purple-700/50 bg-purple-900/20'
+                              : 'border-[#1e2030] bg-[#0a0c14]'
+                          }`}
+                        >
+                          {/* card header */}
+                          <div className="flex items-center gap-1.5 mb-1.5">
+                            <AgentAvatar
+                              avatar={entry.avatar}
+                              name={entry.agent}
+                              color={entry.color}
+                              size={isDumbledore ? 26 : 20}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <span className={`text-[10px] font-bold uppercase tracking-wide ${TEXT_MAP[entry.color] ?? 'text-gray-300'}`}>
+                                {entry.agent === 'McGONAGALL' ? 'McGONAGALL' : entry.agent}
+                              </span>
+                              <span className="text-[8px] text-gray-600 ml-1.5">{entry.role}</span>
+                            </div>
+                            {entry.loading && <Loader2 size={9} className="animate-spin text-gray-600 flex-shrink-0" />}
+                          </div>
+                          {/* card body */}
+                          {entry.loading && (
+                            <div className="space-y-1">
+                              <div className="h-2 bg-[#1e2030] rounded animate-pulse w-full" />
+                              <div className="h-2 bg-[#1e2030] rounded animate-pulse w-4/5" />
+                              <div className="h-2 bg-[#1e2030] rounded animate-pulse w-3/5" />
+                            </div>
+                          )}
+                          {!entry.loading && entry.text && (
+                            <p className={`leading-relaxed whitespace-pre-wrap ${isDumbledore ? 'text-[11px] text-gray-200' : 'text-[10px] text-gray-400'}`}>
+                              {entry.text}
+                            </p>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* ── Single agent answer ────────────────────────────────── */}
+                {!briefActive && !answer && !chatError && !loading && (
                   <div className="flex flex-col items-center justify-center h-full gap-2.5 text-center">
                     <Image src="/agents/Hogwarts_Cyborg.png" alt="Hogwarts" width={40} height={40}
                       className="rounded-xl object-cover object-top opacity-40" />
                     <p className="text-xs text-gray-600 leading-relaxed">
-                      Ask a question below.<br />
-                      Watch the agent come alive<br />in the office.
+                      Ask a question or type <span className="text-purple-500 font-mono">/brief</span><br />
+                      to run the full team briefing.
                     </p>
                   </div>
                 )}
-                {loading && (
+                {!briefActive && loading && (
                   <div className="flex flex-col items-center justify-center h-full gap-2">
                     <Loader2 size={22} className="animate-spin text-purple-500 opacity-70" />
                     <p className="text-xs text-gray-600">Consulting agents…</p>
                   </div>
                 )}
-                {chatError && !loading && (
+                {!briefActive && chatError && !loading && (
                   <div className="rounded-lg border border-red-800/40 bg-red-900/20 p-3 text-xs text-red-300">⚠️ {chatError}</div>
                 )}
-                {answer && !loading && (
+                {!briefActive && answer && !loading && (
                   <div className="space-y-2.5">
                     <div className="flex items-center gap-2 pb-2.5 border-b border-[#1e2030]">
                       {respondingAvatar && <AgentAvatar avatar={respondingAvatar} name={respondingAgent} color={respondingColor} size={28} />}
@@ -1116,7 +1348,7 @@ export function HogwartsShell() {
                   value={question}
                   onChange={e => { setQuestion(e.target.value); if (!e.target.value.startsWith('@')) setActiveAgent(null) }}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask() } }}
-                  placeholder="@mention an agent or ask anything…"
+                  placeholder="@mention an agent, ask anything, or /brief…"
                   className="flex-1 bg-[#07080e] border border-[#1e2030] rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-700 focus:outline-none focus:border-purple-700/60 transition-colors"
                 />
                 <button
