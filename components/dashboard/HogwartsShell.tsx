@@ -9,6 +9,8 @@ import {
 } from 'lucide-react'
 import { NavTabs } from './NavTabs'
 import type { ComponentType } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import {
   DumbledoreCharacter, HermioneCharacter, HarryCharacter,
   RonCharacter, McGonagallCharacter, SnapeCharacter, HagridCharacter,
@@ -1279,9 +1281,27 @@ export function HogwartsShell() {
                             </div>
                           )}
                           {!entry.loading && entry.text && (
-                            <p className={`leading-relaxed whitespace-pre-wrap ${isDumbledore ? 'text-[11px] text-gray-200' : 'text-[10px] text-gray-400'}`}>
-                              {entry.text}
-                            </p>
+                            <div className={`prose prose-invert max-w-none ${isDumbledore ? 'text-[11px] text-gray-200' : 'text-[10px] text-gray-400'}`}>
+                              <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
+                                components={{
+                                  h1: ({ children }) => <p className="font-bold text-gray-100 mb-1 mt-2 text-[11px]">{children}</p>,
+                                  h2: ({ children }) => <p className="font-bold text-gray-200 mb-1 mt-2 text-[11px]">{children}</p>,
+                                  h3: ({ children }) => <p className="font-semibold text-gray-300 mb-0.5 mt-1.5 text-[10px]">{children}</p>,
+                                  p:  ({ children }) => <p className="mb-1.5 leading-relaxed">{children}</p>,
+                                  ul: ({ children }) => <ul className="list-disc list-inside mb-1.5 space-y-0.5">{children}</ul>,
+                                  ol: ({ children }) => <ol className="list-decimal list-inside mb-1.5 space-y-0.5">{children}</ol>,
+                                  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                                  strong: ({ children }) => <strong className="font-semibold text-gray-100">{children}</strong>,
+                                  em: ({ children }) => <em className="italic text-gray-300">{children}</em>,
+                                  code: ({ children }) => <code className="bg-[#1e2030] text-purple-300 rounded px-1 py-0.5 font-mono text-[9px]">{children}</code>,
+                                  hr: () => <hr className="border-[#2a2d3a] my-2" />,
+                                  blockquote: ({ children }) => <blockquote className="border-l-2 border-purple-700 pl-2 text-gray-400 italic">{children}</blockquote>,
+                                }}
+                              >
+                                {entry.text}
+                              </ReactMarkdown>
+                            </div>
                           )}
                         </div>
                       )
@@ -1319,7 +1339,28 @@ export function HogwartsShell() {
                       </div>
                       <span className="ml-auto text-[9px] text-blue-400 bg-blue-900/20 border border-blue-800/30 rounded px-1.5 py-0.5">responding</span>
                     </div>
-                    <div className="text-xs text-gray-300 leading-relaxed whitespace-pre-wrap">{answer}</div>
+                    <div className="prose prose-invert max-w-none text-xs text-gray-300">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          h1: ({ children }) => <p className="font-bold text-gray-100 mb-1.5 mt-2 text-sm">{children}</p>,
+                          h2: ({ children }) => <p className="font-bold text-gray-200 mb-1.5 mt-2 text-[13px]">{children}</p>,
+                          h3: ({ children }) => <p className="font-semibold text-gray-300 mb-1 mt-1.5 text-xs">{children}</p>,
+                          p:  ({ children }) => <p className="mb-2 leading-relaxed">{children}</p>,
+                          ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>,
+                          ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>,
+                          li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                          strong: ({ children }) => <strong className="font-semibold text-gray-100">{children}</strong>,
+                          em: ({ children }) => <em className="italic text-gray-400">{children}</em>,
+                          code: ({ children }) => <code className="bg-[#1e2030] text-purple-300 rounded px-1 py-0.5 font-mono text-[11px]">{children}</code>,
+                          pre: ({ children }) => <pre className="bg-[#1e2030] rounded p-2 overflow-x-auto text-[11px] font-mono my-2">{children}</pre>,
+                          hr: () => <hr className="border-[#2a2d3a] my-3" />,
+                          blockquote: ({ children }) => <blockquote className="border-l-2 border-purple-700 pl-3 text-gray-400 italic my-2">{children}</blockquote>,
+                        }}
+                      >
+                        {answer}
+                      </ReactMarkdown>
+                    </div>
                   </div>
                 )}
               </div>
