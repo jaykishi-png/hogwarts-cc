@@ -4,7 +4,15 @@ import { useState, useEffect, useRef } from 'react'
 import Image from 'next/image'
 import { format } from 'date-fns'
 import { NavTabs } from './NavTabs'
-import { Users, Zap, RotateCcw, Wifi, WifiOff } from 'lucide-react'
+import {
+  DumbledoreCharacter,
+  HermioneCharacter,
+  HarryCharacter,
+  RonCharacter,
+  McGonagallCharacter,
+  SnapeCharacter,
+  HagridCharacter,
+} from './OfficeCharacters' from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -93,18 +101,6 @@ const ROOMS: Record<RoomId, RoomConfig> = {
   },
 }
 
-// ─── Agent colour maps ────────────────────────────────────────────────────────
-
-const OUTFIT: Record<string, { body: string; pants: string; skin: string }> = {
-  purple: { body: '#7c3aed', pants: '#4c1d95', skin: '#e2b896' },
-  amber:  { body: '#d97706', pants: '#92400e', skin: '#e2c4a0' },
-  red:    { body: '#dc2626', pants: '#7f1d1d', skin: '#e2b896' },
-  orange: { body: '#ea580c', pants: '#7c2d12', skin: '#e2b896' },
-  green:  { body: '#059669', pants: '#064e3b', skin: '#e2c4a0' },
-  slate:  { body: '#475569', pants: '#1e293b', skin: '#c8c8c8' },
-  brown:  { body: '#92400e', pants: '#451a03', skin: '#c8a060' },
-}
-
 const GLOW: Record<string, string> = {
   purple: 'drop-shadow(0 0 6px rgba(139,92,246,0.8))',
   amber:  'drop-shadow(0 0 6px rgba(251,191,36,0.8))',
@@ -117,38 +113,28 @@ const GLOW: Record<string, string> = {
 
 // ─── Mini Character SVG ───────────────────────────────────────────────────────
 
+const CHARACTER_MAP: Record<string, React.ComponentType<{ avatar: string; isWalking: boolean; status: AgentState['status'] }>> = {
+  DUMBLEDORE: DumbledoreCharacter,
+  HERMIONE:   HermioneCharacter,
+  HARRY:      HarryCharacter,
+  RON:        RonCharacter,
+  McGONAGALL: McGonagallCharacter,
+  SNAPE:      SnapeCharacter,
+  HAGRID:     HagridCharacter,
+}
+
 function MiniCharacter({
-  agent,
-  isWalking,
-  facingLeft,
-  onClick,
+  agent, isWalking, facingLeft, onClick,
 }: {
-  agent: AgentState
-  isWalking: boolean
-  facingLeft: boolean
-  onClick: () => void
+  agent: AgentState; isWalking: boolean; facingLeft: boolean; onClick: () => void
 }) {
-  const [imgFailed, setImgFailed] = useState(false)
-  const outfit = OUTFIT[agent.color]
-
-  // Larger so portrait is clearly visible
-  const headSize = 40
-  const bodyW    = 28
-  const bodyH    = 20
-  const legW     = 11
-  const legH     = 18
-  const armW     = 8
-  const armH     = 16
-
-  const statusBorder =
-    agent.status === 'online'     ? '#4ade80' :
-    agent.status === 'working'    ? '#fbbf24' :
-    agent.status === 'in-meeting' ? '#60a5fa' : '#4b5563'
+  const CharSVG = CHARACTER_MAP[agent.name]
+  const glowColor = GLOW[agent.color]
 
   return (
     <button
       onClick={onClick}
-      className="absolute select-none cursor-pointer focus:outline-none"
+      className="absolute select-none cursor-pointer focus:outline-none hover:brightness-110 active:scale-95"
       style={{
         left: `${getPos(agent).x}%`,
         top:  `${getPos(agent).y}%`,
@@ -159,130 +145,42 @@ function MiniCharacter({
       }}
       title={`${agent.name} — click to ${agent.currentRoom === 'great-hall' ? 'return to desk' : 'call to meeting'}`}
     >
-      <div className="flex flex-col items-center gap-0">
-
-        {/* Status emoji above head */}
-        <div style={{ height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 2 }}>
-          {agent.status === 'working'    && <span className="status-pulse" style={{ fontSize: 12 }}>💭</span>}
-          {agent.status === 'in-meeting' && <span className="status-pulse" style={{ fontSize: 12 }}>🗣️</span>}
-          {agent.status === 'away'       && <span className="status-pulse" style={{ fontSize: 12, opacity: 0.6 }}>💤</span>}
+      <div className="flex flex-col items-center">
+        {/* Status bubble */}
+        <div style={{ height: 14, display: 'flex', alignItems: 'center', marginBottom: 1 }}>
+          {agent.status === 'working'    && <span className="status-pulse text-[11px]">💭</span>}
+          {agent.status === 'in-meeting' && <span className="status-pulse text-[11px]">🗣️</span>}
+          {agent.status === 'away'       && <span className="status-pulse text-[11px] opacity-60">💤</span>}
         </div>
 
-        {/* Character body — flipped when walking left */}
-        <div
-          className={isWalking ? 'agent-walking' : ''}
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            transform: facingLeft ? 'scaleX(-1)' : 'scaleX(1)',
-            transition: 'transform 0.12s',
-            filter: agent.status !== 'away' ? GLOW[agent.color] : 'grayscale(1) opacity(0.45)',
-          }}
-        >
-          {/* ── HEAD: full portrait image, circular ── */}
-          <div
-            style={{
-              width: headSize,
-              height: headSize,
-              borderRadius: '50%',
-              overflow: 'hidden',
-              border: `2.5px solid ${statusBorder}`,
-              flexShrink: 0,
-              boxShadow: `0 0 8px ${statusBorder}55`,
-            }}
-          >
-            {imgFailed ? (
-              <div style={{ width: '100%', height: '100%', background: outfit.body, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 14, fontWeight: 700 }}>
-                {agent.name[0]}
-              </div>
-            ) : (
-              <Image
-                src={agent.avatar}
-                alt={agent.name}
-                width={headSize}
-                height={headSize}
-                style={{ objectFit: 'cover', objectPosition: 'top center', width: '100%', height: '100%' }}
-                onError={() => setImgFailed(true)}
-              />
-            )}
-          </div>
-
-          {/* ── TORSO + ARMS ── */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', marginTop: 2 }}>
-            {/* Left arm */}
-            <div
-              className="arm-left"
-              style={{
-                width: armW, height: armH,
-                background: outfit.body,
-                borderRadius: 4,
-                transformOrigin: 'top center',
-                marginRight: 2,
-                marginTop: 3,
-              }}
-            />
-            {/* Torso */}
-            <div
-              className="char-body"
-              style={{
-                width: bodyW, height: bodyH,
-                background: outfit.body,
-                borderRadius: '4px 4px 3px 3px',
-              }}
-            />
-            {/* Right arm */}
-            <div
-              className="arm-right"
-              style={{
-                width: armW, height: armH,
-                background: outfit.body,
-                borderRadius: 4,
-                transformOrigin: 'top center',
-                marginLeft: 2,
-                marginTop: 3,
-              }}
-            />
-          </div>
-
-          {/* ── LEGS ── */}
-          <div style={{ display: 'flex', gap: 3, marginTop: 2 }}>
-            <div
-              className="leg-left"
-              style={{
-                width: legW, height: legH,
-                background: outfit.pants,
-                borderRadius: '3px 3px 5px 5px',
-                transformOrigin: 'top center',
-              }}
-            />
-            <div
-              className="leg-right"
-              style={{
-                width: legW, height: legH,
-                background: outfit.pants,
-                borderRadius: '3px 3px 5px 5px',
-                transformOrigin: 'top center',
-              }}
-            />
-          </div>
+        {/* Character SVG — mirrored when walking left */}
+        <div style={{
+          transform: facingLeft ? 'scaleX(-1)' : 'scaleX(1)',
+          transition: 'transform 0.12s',
+          filter: agent.status === 'away' ? 'grayscale(1) opacity(0.45)' : glowColor,
+        }}>
+          {CharSVG && (
+            <CharSVG avatar={agent.avatar} isWalking={isWalking} status={agent.status} />
+          )}
         </div>
 
-        {/* Ground shadow */}
-        <div style={{ width: 30, height: 5, background: 'rgba(0,0,0,0.3)', borderRadius: '50%', marginTop: 2, filter: 'blur(2px)' }} />
+        {/* Shadow */}
+        <div style={{
+          width: agent.name === 'HAGRID' ? 44 : 30,
+          height: 5,
+          background: 'rgba(0,0,0,0.35)',
+          borderRadius: '50%',
+          marginTop: 1,
+          filter: 'blur(2px)',
+        }} />
 
-        {/* Name tag */}
-        <div style={{ marginTop: 3, pointerEvents: 'none' }}>
+        {/* Name tag (not flipped) */}
+        <div style={{ marginTop: 2, pointerEvents: 'none' }}>
           <span style={{
-            fontSize: 8,
-            fontWeight: 700,
-            color: '#9ca3af',
-            background: 'rgba(10,12,20,0.92)',
-            borderRadius: 3,
-            padding: '1px 4px',
-            whiteSpace: 'nowrap',
-            border: '1px solid rgba(42,45,58,0.6)',
-            letterSpacing: '0.05em',
+            fontSize: 8, fontWeight: 700, color: '#9ca3af',
+            background: 'rgba(10,12,20,0.92)', borderRadius: 3,
+            padding: '1px 4px', whiteSpace: 'nowrap',
+            border: '1px solid rgba(42,45,58,0.6)', letterSpacing: '0.05em',
           }}>
             {agent.name === 'McGONAGALL' ? 'McGON.' : agent.name.slice(0, 7)}
           </span>

@@ -19,32 +19,38 @@ body {
 
 /* ── Mini character walking animations ───────────────────── */
 @keyframes leg-fwd {
-  from { transform: rotate(-30deg); }
-  to   { transform: rotate(30deg);  }
+  from { transform: rotate(-32deg); }
+  to   { transform: rotate(32deg);  }
 }
 @keyframes body-bob {
-  0%, 100% { transform: translateY(0px);   }
-  50%      { transform: translateY(-1.5px); }
+  0%, 100% { transform: translateY(0px);  }
+  50%      { transform: translateY(-2px); }
 }
 @keyframes arm-swing-l {
-  from { transform: rotate(25deg);  }
-  to   { transform: rotate(-25deg); }
+  from { transform: rotate(28deg);  }
+  to   { transform: rotate(-28deg); }
 }
 @keyframes arm-swing-r {
-  from { transform: rotate(-25deg); }
-  to   { transform: rotate(25deg);  }
+  from { transform: rotate(-28deg); }
+  to   { transform: rotate(28deg);  }
 }
 
-.agent-walking .leg-left  { animation: leg-fwd    0.28s ease-in-out infinite alternate;         }
-.agent-walking .leg-right { animation: leg-fwd    0.28s ease-in-out infinite alternate-reverse;  }
-.agent-walking .arm-left  { animation: arm-swing-l 0.28s ease-in-out infinite alternate;         }
-.agent-walking .arm-right { animation: arm-swing-r 0.28s ease-in-out infinite alternate;         }
-.agent-walking .char-body { animation: body-bob   0.28s ease-in-out infinite;                   }
+/* SVG transform-box fix — makes transform-origin work on SVG elements */
+.leg-left, .leg-right, .arm-left, .arm-right {
+  transform-box: fill-box;
+  transform-origin: top center;
+}
 
-/* Status pulse glow */
+.agent-walking .leg-left  { animation: leg-fwd     0.26s ease-in-out infinite alternate;        }
+.agent-walking .leg-right { animation: leg-fwd     0.26s ease-in-out infinite alternate-reverse; }
+.agent-walking .arm-left  { animation: arm-swing-l 0.26s ease-in-out infinite alternate;        }
+.agent-walking .arm-right { animation: arm-swing-r 0.26s ease-in-out infinite alternate;        }
+.agent-walking .char-body { animation: body-bob    0.26s ease-in-out infinite;                  }
+
+/* Status pulse */
 @keyframes status-glow {
-  0%, 100% { opacity: 0.6; }
-  50%      { opacity: 1;   }
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1;    }
 }
 .status-pulse { animation: status-glow 1.4s ease-in-out infinite; }
 
