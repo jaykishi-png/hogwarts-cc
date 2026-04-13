@@ -139,7 +139,13 @@ export function HogwartsPanel() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-sm">🏰</span>
+          <Image
+            src="/agents/Hogwarts_Cyborg.png"
+            alt="Hogwarts"
+            width={28}
+            height={28}
+            className="rounded-md object-cover object-top flex-shrink-0"
+          />
           <h2 className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Hogwarts</h2>
           <span className="text-xs text-gray-600">— AI Agent Taskforce</span>
         </div>
