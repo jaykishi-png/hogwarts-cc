@@ -4,12 +4,33 @@ import OpenAI from 'openai'
 const FRAMEIO_BASE = 'https://api.frame.io/v2'
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
+// ─── Frame.io URL resolver (follows f.io short-link redirects) ───────────────
+
+async function resolveUrl(url: string): Promise<string> {
+  // f.io short links (e.g. https://f.io/tQcf9eqM) redirect to the real URL.
+  // Follow the redirect chain without downloading the body.
+  if (/f\.io\//.test(url)) {
+    try {
+      const res = await fetch(url, { method: 'HEAD', redirect: 'follow' })
+      return res.url || url
+    } catch {
+      // If HEAD fails try GET with redirect follow, abort early
+      try {
+        const controller = new AbortController()
+        const res = await fetch(url, { redirect: 'follow', signal: controller.signal })
+        controller.abort()
+        return res.url || url
+      } catch { /* fall through to original url */ }
+    }
+  }
+  return url
+}
+
 // ─── Frame.io URL parser ──────────────────────────────────────────────────────
 
 function parseFrameioUrl(url: string): { type: 'review' | 'asset'; id: string } | null {
-  // Public review link:  https://app.frame.io/reviews/{id}
-  //                      https://f.io/{id}
-  const reviewMatch = url.match(/(?:app\.frame\.io\/reviews|f\.io)\/([a-zA-Z0-9_-]+)/)
+  // Public review link:  https://app.frame.io/reviews/{uuid}
+  const reviewMatch = url.match(/app\.frame\.io\/reviews\/([a-zA-Z0-9_-]+)/)
   if (reviewMatch) return { type: 'review', id: reviewMatch[1] }
 
   // Direct asset link:   https://app.frame.io/projects/.../assets/{uuid}
@@ -46,9 +67,11 @@ async function frameioPost(path: string, body: Record<string, unknown>) {
   return res.json()
 }
 
-async function resolveAssetId(url: string): Promise<string> {
+async function resolveAssetId(rawUrl: string): Promise<string> {
+  // Follow any short-link redirects first (f.io → app.frame.io/...)
+  const url    = await resolveUrl(rawUrl)
   const parsed = parseFrameioUrl(url)
-  if (!parsed) throw new Error('Could not parse Frame.io URL. Paste a review link (app.frame.io/reviews/…) or asset link (app.frame.io/projects/…/assets/…).')
+  if (!parsed) throw new Error(`Could not parse Frame.io URL. Got: "${url}". Paste a review link (app.frame.io/reviews/…) or asset link (app.frame.io/projects/…/assets/…).`)
 
   if (parsed.type === 'review') {
     const review = await frameioGet(`/review_links/${parsed.id}`)
