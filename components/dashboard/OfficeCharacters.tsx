@@ -1,416 +1,502 @@
 'use client'
 
 /**
- * Simplified animated SVG characters for each Hogwarts agent.
- * Cartoon faces with blink, look-side, and mouth-talk CSS animations.
- * Avatar prop retained for interface compatibility but faces are now drawn.
+ * Pixel-art top-down RPG sprites — one per Hogwarts agent.
+ *
+ * Each character uses a tiny integer viewBox rendered at 3× scale
+ * (e.g. 16×26 grid → 48×78 px) with shapeRendering="crispEdges"
+ * so every rect stays sharp like a retro game sprite.
+ *
+ * CSS animation hooks (same as before):
+ *   .leg-left / .leg-right  – walking swing
+ *   .arm-left / .arm-right  – arm swing
+ *   .char-body              – gentle bob
+ *   .eyelid .eyelid-l/r     – blink (scaleY 0→1)
+ *   .mouth-talking          – talking (scaleY oscillate)
  */
 
-import type { ReactNode } from 'react'
-
 interface CharProps {
-  avatar: string      // kept for interface compat — faces are drawn, not photos
+  avatar:    string          // kept for interface compatibility — not used
   isWalking: boolean
-  status: 'online' | 'working' | 'in-meeting' | 'away'
+  status:    'online' | 'working' | 'in-meeting' | 'away'
 }
 
 function sc(s: string) {
-  if (s === 'online') return '#4ade80'
-  if (s === 'working') return '#fbbf24'
+  if (s === 'online')     return '#4ade80'
+  if (s === 'working')    return '#fbbf24'
   if (s === 'in-meeting') return '#60a5fa'
   return '#4b5563'
 }
 
-// ── Shared animated cartoon face ─────────────────────────────────────────────
-// Handles: blink (.eyelid-l/r), eye-look (.pupils), mouth-talk, head-bob
-function Face({
-  cx, cy, r, skin = '#f5c894', status, over,
-}: {
-  cx: number; cy: number; r: number; skin?: string
-  status: string; over?: ReactNode
-}) {
-  const ey  = cy - r * 0.11           // eye y
-  const ew  = r * 0.26                // eye white radius
-  const ep  = r * 0.13                // pupil radius
-  const elx = cx - r * 0.33           // left eye x
-  const erx = cx + r * 0.33           // right eye x
-  const ny  = cy + r * 0.19           // nose y
-  const my  = cy + r * 0.44           // mouth y
-
-  return (
-    <g className="head-bob">
-      {/* Head */}
-      <ellipse cx={cx} cy={cy} rx={r} ry={r * 1.06} fill={skin} />
-
-      {/* Eye whites */}
-      <circle cx={elx} cy={ey} r={ew} fill="white" />
-      <circle cx={erx} cy={ey} r={ew} fill="white" />
-
-      {/* Pupils — animated to look side to side */}
-      <g className="pupils">
-        <circle cx={elx} cy={ey} r={ep} fill="#1c1917" />
-        <circle cx={erx} cy={ey} r={ep} fill="#1c1917" />
-        {/* Shine */}
-        <circle cx={elx + ep * 0.4} cy={ey - ep * 0.35} r={ep * 0.28} fill="white" />
-        <circle cx={erx + ep * 0.4} cy={ey - ep * 0.35} r={ep * 0.28} fill="white" />
-      </g>
-
-      {/* Eyelids — animated to blink */}
-      <ellipse className="eyelid eyelid-l" cx={elx} cy={ey} rx={ew + 0.6} ry={ew + 0.6} fill={skin} />
-      <ellipse className="eyelid eyelid-r" cx={erx} cy={ey} rx={ew + 0.6} ry={ew + 0.6} fill={skin} />
-
-      {/* Nose */}
-      <circle cx={cx} cy={ny} r={r * 0.07} fill="#a06040" opacity="0.45" />
-
-      {/* Mouth */}
-      {status === 'in-meeting' ? (
-        <ellipse
-          className="mouth-talking"
-          cx={cx} cy={my}
-          rx={r * 0.29} ry={r * 0.17}
-          fill="#6b2a1c"
-        />
-      ) : (
-        <path
-          d={`M${cx - r * 0.26},${my} Q${cx},${my + r * 0.17} ${cx + r * 0.26},${my}`}
-          fill="none" stroke="#a06040" strokeWidth="1.1" strokeLinecap="round" opacity="0.65"
-        />
-      )}
-
-      {/* Optional over-face extras (glasses, scar, etc.) */}
-      {over}
-    </g>
-  )
+// Shared SVG props for crisp pixel rendering
+const PX = {
+  shapeRendering: 'crispEdges' as const,
+  style: { imageRendering: 'pixelated' } as React.CSSProperties,
 }
 
-// ─── DUMBLEDORE ───────────────────────────────────────────────────────────────
-// Tall purple robes, mortarboard, white beard, staff
+const SKIN   = '#f4c591'   // warm
+const SKIN_P = '#e2cdb8'   // pale  (Snape)
+const SKIN_R = '#c88050'   // ruddy (Hagrid)
+
+// ─── DUMBLEDORE ────────────────────────────────────────────────────────────────
+// Mortarboard, white hair/beard, purple wizard robes, glowing staff
 export function DumbledoreCharacter({ isWalking, status }: CharProps) {
   return (
-    <svg width="58" height="112" viewBox="0 0 58 112" className={isWalking ? 'agent-walking' : ''}>
-      {/* Mortarboard */}
-      <rect x="14" y="6" width="30" height="4" rx="2" fill="#4c1d95" />
-      <rect x="19" y="10" width="20" height="10" rx="2" fill="#5b21b6" />
-      <line x1="43" y1="7" x2="47" y2="14" stroke="#a78bfa" strokeWidth="1.5" />
-      <circle cx="47" cy="15" r="2.5" fill="#a78bfa" />
-      {/* Beard */}
-      <ellipse cx="29" cy="42" rx="10" ry="7" fill="#f1f5f9" opacity="0.95" />
-      {/* Face */}
-      <Face cx={29} cy={26} r={13} status={status} />
-      {/* Body */}
-      <rect x="18" y="40" width="22" height="50" rx="4" fill="#6d28d9" className="char-body" />
-      <rect x="27" y="40" width="5" height="50" rx="2" fill="#7c3aed" opacity="0.25" />
-      {/* Left arm */}
+    <svg width="54" height="84" viewBox="0 0 18 28"
+      className={isWalking ? 'agent-walking' : ''} {...PX}>
+
+      {/* mortarboard brim */}
+      <rect x="2"  y="1" width="14" height="2" fill="#2d1b6b" />
+      {/* mortarboard crown */}
+      <rect x="5"  y="0" width="8"  height="4" fill="#4c1d95" />
+      {/* tassel */}
+      <rect x="12" y="0" width="1"  height="5" fill="#a78bfa" />
+      <rect x="12" y="4" width="3"  height="2" fill="#a78bfa" />
+
+      {/* white hair — sides */}
+      <rect x="2"  y="3" width="3"  height="6" fill="#e2e8f0" />
+      <rect x="13" y="3" width="3"  height="6" fill="#e2e8f0" />
+
+      {/* face */}
+      <rect x="4"  y="4" width="10" height="8" fill={SKIN} className="char-body" />
+      {/* left eye + eyelid */}
+      <rect x="6"  y="6" width="2"  height="2" fill="#1c1917" />
+      <rect className="eyelid eyelid-l" x="6"  y="6" width="2"  height="2" fill={SKIN} />
+      {/* right eye + eyelid */}
+      <rect x="10" y="6" width="2"  height="2" fill="#1c1917" />
+      <rect className="eyelid eyelid-r" x="10" y="6" width="2"  height="2" fill={SKIN} />
+      {/* nose */}
+      <rect x="8"  y="8" width="2"  height="1" fill="#c8905a" opacity="0.55" />
+      {/* mouth */}
+      {status === 'in-meeting'
+        ? <rect className="mouth-talking" x="7" y="10" width="4" height="2" fill="#7c2d12" />
+        : <rect x="7" y="10" width="4" height="1" fill="#b07040" opacity="0.7" />}
+
+      {/* white beard */}
+      <rect x="4"  y="11" width="10" height="4" fill="#f1f5f9" />
+      <rect x="5"  y="14" width="8"  height="2" fill="#e2e8f0" />
+
+      {/* purple robe body */}
+      <rect x="4"  y="15" width="10" height="8" fill="#6d28d9" className="char-body" />
+      <rect x="8"  y="15" width="2"  height="8" fill="#7c3aed" opacity="0.30" />
+
+      {/* left arm */}
       <g className="arm-left">
-        <rect x="8"  y="42" width="10" height="22" rx="4" fill="#5b21b6" />
-        <circle cx="12" cy="65" r="4" fill="#f5c894" />
+        <rect x="2"  y="15" width="2" height="6" fill="#5b21b6" />
+        <rect x="2"  y="21" width="2" height="2" fill={SKIN} />
       </g>
-      {/* Right arm */}
+      {/* right arm + staff */}
       <g className="arm-right">
-        <rect x="40" y="42" width="10" height="22" rx="4" fill="#5b21b6" />
-        <circle cx="47" cy="65" r="4" fill="#f5c894" />
+        <rect x="14" y="15" width="2" height="6" fill="#5b21b6" />
+        <rect x="14" y="21" width="2" height="2" fill={SKIN} />
+        <rect x="16" y="7"  width="2" height="16" fill="#c4b5fd" />
+        <rect x="15" y="5"  width="4" height="3"  fill="#7c3aed" />
+        <rect x="16" y="5"  width="2" height="2"  fill="#ddd6fe" />
       </g>
-      {/* Staff */}
-      <rect x="49" y="22" width="3" height="68" rx="1.5" fill="#c4b5fd" />
-      <circle cx="50.5" cy="21" r="5" fill="#7c3aed" />
-      <circle cx="50.5" cy="21" r="2.5" fill="#ddd6fe" />
-      {/* Legs */}
+
+      {/* legs */}
       <g className="leg-left">
-        <rect x="17" y="86" width="12" height="22" rx="4" fill="#4c1d95" />
-        <rect x="16" y="104" width="13" height="5" rx="2" fill="#312e81" />
+        <rect x="4"  y="23" width="4" height="5" fill="#4c1d95" />
+        <rect x="4"  y="27" width="5" height="1" fill="#312e81" />
       </g>
       <g className="leg-right">
-        <rect x="30" y="86" width="12" height="22" rx="4" fill="#4c1d95" />
-        <rect x="29" y="104" width="13" height="5" rx="2" fill="#312e81" />
+        <rect x="10" y="23" width="4" height="5" fill="#4c1d95" />
+        <rect x="9"  y="27" width="5" height="1" fill="#312e81" />
       </g>
-      {/* Status ring */}
-      <circle cx="29" cy="26" r="15" fill="none" stroke={sc(status)} strokeWidth="2" opacity="0.85" />
+
+      {/* status ring */}
+      <circle cx="9" cy="14" r="8" fill="none" stroke={sc(status)} strokeWidth="0.6" opacity="0.9" />
     </svg>
   )
 }
 
-// ─── HERMIONE ────────────────────────────────────────────────────────────────
-// Brown curly hair, Gryffindor uniform, book
+// ─── HERMIONE ──────────────────────────────────────────────────────────────────
+// Wide curly brown hair, Gryffindor tie, dark uniform, book in hand
 export function HermioneCharacter({ isWalking, status }: CharProps) {
   return (
-    <svg width="52" height="100" viewBox="0 0 52 100" className={isWalking ? 'agent-walking' : ''}>
-      {/* Hair */}
-      <ellipse cx="11" cy="22" rx="8"  ry="11" fill="#92400e" />
-      <ellipse cx="41" cy="22" rx="8"  ry="11" fill="#92400e" />
-      <ellipse cx="26" cy="14" rx="13" ry="8"  fill="#78350f" />
-      {/* Face */}
-      <Face cx={26} cy={24} r={12} status={status} />
-      {/* Collar */}
-      <path d="M20,37 L26,43 L32,37" fill="none" stroke="#e5e7eb" strokeWidth="2" />
-      {/* Tie */}
-      <polygon points="24,38 28,38 27,50 25,50" fill="#dc2626" />
-      <line x1="25.5" y1="41" x2="26.5" y2="41" stroke="#fbbf24" strokeWidth="1" />
-      <line x1="25.5" y1="44" x2="26.5" y2="44" stroke="#fbbf24" strokeWidth="1" />
-      {/* Body */}
-      <rect x="17" y="39" width="18" height="38" rx="3" fill="#1c1917" className="char-body" />
-      <rect x="17" y="39" width="5"  height="38" rx="2" fill="#292524" opacity="0.6" />
-      <rect x="30" y="39" width="5"  height="38" rx="2" fill="#292524" opacity="0.6" />
-      {/* Left arm + book */}
+    <svg width="48" height="78" viewBox="0 0 16 26"
+      className={isWalking ? 'agent-walking' : ''} {...PX}>
+
+      {/* curly hair — wider than face */}
+      <rect x="1"  y="1"  width="14" height="5" fill="#92400e" />
+      <rect x="0"  y="3"  width="2"  height="7" fill="#92400e" />
+      <rect x="14" y="3"  width="2"  height="7" fill="#92400e" />
+      <rect x="2"  y="1"  width="12" height="2" fill="#a05018" />   {/* highlight */}
+
+      {/* face */}
+      <rect x="3"  y="5"  width="10" height="8" fill={SKIN} className="char-body" />
+      <rect x="5"  y="7"  width="2"  height="2" fill="#1c1917" />
+      <rect className="eyelid eyelid-l" x="5"  y="7"  width="2"  height="2" fill={SKIN} />
+      <rect x="9"  y="7"  width="2"  height="2" fill="#1c1917" />
+      <rect className="eyelid eyelid-r" x="9"  y="7"  width="2"  height="2" fill={SKIN} />
+      <rect x="7"  y="9"  width="2"  height="1" fill="#c8905a" opacity="0.5" />
+      {status === 'in-meeting'
+        ? <rect className="mouth-talking" x="6" y="11" width="4" height="2" fill="#7c2d12" />
+        : <rect x="6" y="11" width="4" height="1" fill="#b07040" opacity="0.7" />}
+
+      {/* collar + Gryffindor tie */}
+      <rect x="5"  y="13" width="6"  height="1" fill="#e5e7eb" />
+      <rect x="7"  y="13" width="2"  height="6" fill="#dc2626" />
+      <rect x="7"  y="14" width="2"  height="1" fill="#fbbf24" opacity="0.9" />
+      <rect x="7"  y="16" width="2"  height="1" fill="#fbbf24" opacity="0.9" />
+
+      {/* dark uniform body */}
+      <rect x="3"  y="13" width="10" height="8" fill="#1c1917" className="char-body" />
+
+      {/* left arm + book */}
       <g className="arm-left">
-        <rect x="8" y="41" width="9" height="20" rx="4" fill="#1c1917" />
-        <circle cx="11" cy="62" r="3.5" fill="#e2c4a0" />
-        <rect x="2" y="58" width="12" height="15" rx="1.5" fill="#854d0e" />
-        <rect x="2" y="58" width="2.5" height="15" rx="1"   fill="#92400e" />
-        <line x1="6" y1="63" x2="13" y2="63" stroke="#fbbf24" strokeWidth="0.7" />
-        <line x1="6" y1="66" x2="13" y2="66" stroke="#fbbf24" strokeWidth="0.7" />
+        <rect x="1"  y="13" width="2" height="6" fill="#1c1917" />
+        <rect x="1"  y="19" width="2" height="2" fill={SKIN} />
+        <rect x="-2" y="18" width="4" height="5" fill="#854d0e" />
+        <rect x="-2" y="18" width="1" height="5" fill="#a05018" />
+        <rect x="0"  y="20" width="1" height="1" fill="#fbbf24" opacity="0.7" />
+        <rect x="0"  y="22" width="1" height="1" fill="#fbbf24" opacity="0.7" />
       </g>
-      {/* Right arm */}
+      {/* right arm */}
       <g className="arm-right">
-        <rect x="35" y="41" width="9" height="20" rx="4" fill="#1c1917" />
-        <circle cx="41" cy="62" r="3.5" fill="#e2c4a0" />
+        <rect x="13" y="13" width="2" height="6" fill="#1c1917" />
+        <rect x="13" y="19" width="2" height="2" fill={SKIN} />
       </g>
-      {/* Legs */}
+
+      {/* legs */}
       <g className="leg-left">
-        <rect x="17" y="73" width="10" height="24" rx="4" fill="#1c1917" />
-        <rect x="16" y="93" width="11" height="5"  rx="2" fill="#0c0a09" />
+        <rect x="3"  y="21" width="4" height="5" fill="#1c1917" />
+        <rect x="3"  y="25" width="4" height="1" fill="#0c0a09" />
       </g>
       <g className="leg-right">
-        <rect x="27" y="73" width="10" height="24" rx="4" fill="#1c1917" />
-        <rect x="26" y="93" width="11" height="5"  rx="2" fill="#0c0a09" />
+        <rect x="9"  y="21" width="4" height="5" fill="#1c1917" />
+        <rect x="9"  y="25" width="4" height="1" fill="#0c0a09" />
       </g>
-      {/* Status ring */}
-      <circle cx="26" cy="24" r="14" fill="none" stroke={sc(status)} strokeWidth="2" opacity="0.85" />
+
+      {/* status ring */}
+      <circle cx="8" cy="13" r="7" fill="none" stroke={sc(status)} strokeWidth="0.6" opacity="0.9" />
     </svg>
   )
 }
 
-// ─── HARRY ────────────────────────────────────────────────────────────────────
-// Messy dark hair, round glasses, lightning scar, wand
+// ─── HARRY ─────────────────────────────────────────────────────────────────────
+// Spiky dark hair, pixel glasses, lightning scar, Gryffindor scarf, wand
 export function HarryCharacter({ isWalking, status }: CharProps) {
-  const glasses = (
-    <>
-      <circle cx="23" cy="24" r="5.5" fill="none" stroke="#9ca3af" strokeWidth="1.5" />
-      <circle cx="31" cy="24" r="5.5" fill="none" stroke="#9ca3af" strokeWidth="1.5" />
-      <line x1="28.5" y1="24" x2="25.5" y2="24" stroke="#9ca3af" strokeWidth="1.5" />
-      <line x1="17.5" y1="23" x2="14"   y2="22" stroke="#9ca3af" strokeWidth="1.5" />
-      <line x1="36.5" y1="23" x2="40"   y2="22" stroke="#9ca3af" strokeWidth="1.5" />
-    </>
-  )
   return (
-    <svg width="54" height="102" viewBox="0 0 54 102" className={isWalking ? 'agent-walking' : ''}>
-      {/* Messy hair */}
-      <ellipse cx="27" cy="16" rx="14" ry="10" fill="#1c1917" />
-      <ellipse cx="14" cy="20" rx="6"  ry="8"  fill="#1c1917" />
-      <ellipse cx="40" cy="20" rx="6"  ry="8"  fill="#1c1917" />
-      {/* Face + glasses overlay */}
-      <Face cx={27} cy={25} r={12} status={status} over={glasses} />
-      {/* Lightning scar */}
-      <path d="M27,15 L25,19 L28,19 L26,24" stroke="#ef4444" strokeWidth="1.2" fill="none" opacity="0.65" />
-      {/* Scarf */}
-      <rect x="20" y="38" width="14" height="5" rx="2" fill="#dc2626" />
-      <rect x="22" y="38" width="2"  height="5" fill="#fbbf24" opacity="0.8" />
-      <rect x="26" y="38" width="2"  height="5" fill="#fbbf24" opacity="0.8" />
-      <rect x="30" y="38" width="2"  height="5" fill="#fbbf24" opacity="0.8" />
-      {/* Body */}
-      <rect x="18" y="42" width="18" height="38" rx="3" fill="#1c1917" className="char-body" />
-      <rect x="24" y="42" width="6"  height="38" rx="2" fill="#7f1d1d" opacity="0.45" />
-      {/* Left arm */}
+    <svg width="48" height="78" viewBox="0 0 16 26"
+      className={isWalking ? 'agent-walking' : ''} {...PX}>
+
+      {/* messy dark hair */}
+      <rect x="3"  y="0"  width="10" height="4" fill="#1c1917" />
+      <rect x="2"  y="2"  width="12" height="3" fill="#1c1917" />
+      <rect x="1"  y="3"  width="2"  height="4" fill="#1c1917" />
+      <rect x="13" y="3"  width="2"  height="4" fill="#1c1917" />
+      <rect x="5"  y="0"  width="3"  height="1" fill="#374151" />   {/* highlight */}
+
+      {/* face */}
+      <rect x="3"  y="4"  width="10" height="8" fill={SKIN} className="char-body" />
+      {/* lightning scar */}
+      <rect x="7"  y="4"  width="1"  height="1" fill="#ef4444" opacity="0.75" />
+      <rect x="8"  y="5"  width="1"  height="1" fill="#ef4444" opacity="0.75" />
+      <rect x="7"  y="6"  width="1"  height="1" fill="#ef4444" opacity="0.75" />
+      {/* pixel glasses frames */}
+      <rect x="4"  y="6"  width="4"  height="3" fill="none" stroke="#9ca3af" strokeWidth="1" />
+      <rect x="8"  y="6"  width="4"  height="3" fill="none" stroke="#9ca3af" strokeWidth="1" />
+      {/* eyes inside glasses */}
+      <rect x="5"  y="7"  width="2"  height="1" fill="#1c1917" />
+      <rect className="eyelid eyelid-l" x="5" y="7" width="2" height="1" fill={SKIN} />
+      <rect x="9"  y="7"  width="2"  height="1" fill="#1c1917" />
+      <rect className="eyelid eyelid-r" x="9" y="7" width="2" height="1" fill={SKIN} />
+      {/* mouth */}
+      {status === 'in-meeting'
+        ? <rect className="mouth-talking" x="6" y="10" width="4" height="2" fill="#7c2d12" />
+        : <rect x="6" y="10" width="4" height="1" fill="#b07040" opacity="0.7" />}
+
+      {/* Gryffindor scarf — red/gold stripes */}
+      <rect x="4"  y="12" width="8"  height="2" fill="#dc2626" />
+      <rect x="4"  y="12" width="1"  height="2" fill="#fbbf24" />
+      <rect x="6"  y="12" width="1"  height="2" fill="#fbbf24" />
+      <rect x="8"  y="12" width="1"  height="2" fill="#fbbf24" />
+      <rect x="10" y="12" width="1"  height="2" fill="#fbbf24" />
+
+      {/* dark robe body */}
+      <rect x="3"  y="13" width="10" height="8" fill="#1c1917" className="char-body" />
+      <rect x="6"  y="13" width="4"  height="8" fill="#7f1d1d" opacity="0.35" />
+
+      {/* left arm */}
       <g className="arm-left">
-        <rect x="9" y="44" width="9" height="20" rx="4" fill="#1c1917" />
-        <circle cx="12" cy="65" r="3.5" fill="#f5c894" />
+        <rect x="1"  y="13" width="2" height="6" fill="#1c1917" />
+        <rect x="1"  y="19" width="2" height="2" fill={SKIN} />
       </g>
-      {/* Right arm + wand */}
+      {/* right arm + wand */}
       <g className="arm-right">
-        <rect x="36" y="44" width="9" height="20" rx="4" fill="#1c1917" />
-        <circle cx="43" cy="65" r="3.5" fill="#f5c894" />
-        <line x1="46" y1="60" x2="53" y2="52" stroke="#92400e" strokeWidth="2.5" strokeLinecap="round" />
-        <circle cx="54" cy="51" r="2" fill="#fbbf24" opacity="0.9" />
+        <rect x="13" y="13" width="2" height="6" fill="#1c1917" />
+        <rect x="13" y="19" width="2" height="2" fill={SKIN} />
+        <rect x="15" y="16" width="1" height="8" fill="#92400e" />
+        <rect x="15" y="15" width="2" height="2" fill="#fbbf24" opacity="0.8" />
       </g>
-      {/* Legs */}
+
+      {/* legs */}
       <g className="leg-left">
-        <rect x="18" y="76" width="10" height="23" rx="4" fill="#111827" />
-        <rect x="17" y="95" width="11" height="5"  rx="2" fill="#030712" />
+        <rect x="3"  y="21" width="4" height="5" fill="#111827" />
+        <rect x="3"  y="25" width="4" height="1" fill="#030712" />
       </g>
       <g className="leg-right">
-        <rect x="29" y="76" width="10" height="23" rx="4" fill="#111827" />
-        <rect x="28" y="95" width="11" height="5"  rx="2" fill="#030712" />
+        <rect x="9"  y="21" width="4" height="5" fill="#111827" />
+        <rect x="9"  y="25" width="4" height="1" fill="#030712" />
       </g>
-      {/* Status ring */}
-      <circle cx="27" cy="25" r="14" fill="none" stroke={sc(status)} strokeWidth="2" opacity="0.85" />
+
+      {/* status ring */}
+      <circle cx="8" cy="13" r="7" fill="none" stroke={sc(status)} strokeWidth="0.6" opacity="0.9" />
     </svg>
   )
 }
 
-// ─── RON ──────────────────────────────────────────────────────────────────────
-// Lanky, huge orange-red hair, freckles, wand
+// ─── RON ───────────────────────────────────────────────────────────────────────
+// Extra-wide orange hair, freckles, tall lanky frame, wand
 export function RonCharacter({ isWalking, status }: CharProps) {
   return (
-    <svg width="50" height="108" viewBox="0 0 50 108" className={isWalking ? 'agent-walking' : ''}>
-      {/* Big red hair */}
-      <ellipse cx="25" cy="13" rx="16" ry="12" fill="#c2410c" />
-      <ellipse cx="10" cy="19" rx="8"  ry="10" fill="#ea580c" />
-      <ellipse cx="40" cy="19" rx="8"  ry="10" fill="#ea580c" />
-      {/* Face */}
-      <Face cx={25} cy={26} r={12} status={status} />
-      {/* Freckles */}
-      <circle cx="20"  cy="29"  r="1.2" fill="#92400e" opacity="0.5" />
-      <circle cx="22"  cy="31.5" r="1"  fill="#92400e" opacity="0.5" />
-      <circle cx="28"  cy="29"  r="1.2" fill="#92400e" opacity="0.5" />
-      <circle cx="30"  cy="31.5" r="1"  fill="#92400e" opacity="0.5" />
-      {/* Lanky body */}
-      <rect x="17" y="40" width="16" height="26" rx="3" fill="#1c1917" className="char-body" />
+    <svg width="54" height="90" viewBox="0 0 18 30"
+      className={isWalking ? 'agent-walking' : ''} {...PX}>
+
+      {/* huge orange hair */}
+      <rect x="1"  y="0"  width="16" height="5" fill="#c2410c" />
+      <rect x="0"  y="2"  width="2"  height="8" fill="#ea580c" />
+      <rect x="16" y="2"  width="2"  height="8" fill="#ea580c" />
+      <rect x="3"  y="0"  width="12" height="2" fill="#fb923c" />   {/* highlight */}
+
+      {/* face */}
+      <rect x="4"  y="5"  width="10" height="8" fill={SKIN} className="char-body" />
+      {/* freckles */}
+      <rect x="5"  y="9"  width="1"  height="1" fill="#92400e" opacity="0.55" />
+      <rect x="7"  y="10" width="1"  height="1" fill="#92400e" opacity="0.55" />
+      <rect x="11" y="9"  width="1"  height="1" fill="#92400e" opacity="0.55" />
+      <rect x="12" y="10" width="1"  height="1" fill="#92400e" opacity="0.55" />
+      {/* eyes */}
+      <rect x="6"  y="7"  width="2"  height="2" fill="#1c1917" />
+      <rect className="eyelid eyelid-l" x="6"  y="7"  width="2"  height="2" fill={SKIN} />
+      <rect x="10" y="7"  width="2"  height="2" fill="#1c1917" />
+      <rect className="eyelid eyelid-r" x="10" y="7"  width="2"  height="2" fill={SKIN} />
+      <rect x="8"  y="9"  width="2"  height="1" fill="#c8905a" opacity="0.5" />
+      {status === 'in-meeting'
+        ? <rect className="mouth-talking" x="7" y="11" width="4" height="2" fill="#7c2d12" />
+        : <rect x="7" y="11" width="4" height="1" fill="#b07040" opacity="0.7" />}
+
       {/* Gryffindor patch */}
-      <rect x="18" y="42" width="7" height="7" rx="1" fill="#dc2626" />
-      <path d="M19,43 L21.5,47 L24,43" fill="#fbbf24" />
-      {/* Long arms */}
+      <rect x="5"  y="16" width="4"  height="4" fill="#dc2626" />
+      <rect x="6"  y="16" width="2"  height="4" fill="#fbbf24" opacity="0.55" />
+
+      {/* dark uniform — taller/lankier body */}
+      <rect x="4"  y="14" width="10" height="11" fill="#1c1917" className="char-body" />
+
+      {/* long arms */}
       <g className="arm-left">
-        <rect x="5" y="42" width="11" height="24" rx="4" fill="#1c1917" />
-        <circle cx="9" cy="67" r="4" fill="#e2c4a0" />
+        <rect x="2"  y="14" width="2" height="8" fill="#1c1917" />
+        <rect x="2"  y="22" width="2" height="2" fill={SKIN} />
       </g>
       <g className="arm-right">
-        <rect x="34" y="42" width="11" height="24" rx="4" fill="#1c1917" />
-        <circle cx="41" cy="67" r="4" fill="#e2c4a0" />
-        <line x1="44" y1="63" x2="50" y2="55" stroke="#78350f" strokeWidth="2.5" strokeLinecap="round" />
-        <circle cx="50.5" cy="54" r="2" fill="#fde68a" opacity="0.85" />
+        <rect x="14" y="14" width="2" height="8" fill="#1c1917" />
+        <rect x="14" y="22" width="2" height="2" fill={SKIN} />
+        {/* wand */}
+        <rect x="16" y="18" width="1" height="9" fill="#78350f" />
+        <rect x="16" y="17" width="2" height="2" fill="#fde68a" opacity="0.8" />
       </g>
-      {/* Long lanky legs */}
+
+      {/* long lanky legs */}
       <g className="leg-left">
-        <rect x="16" y="62" width="11" height="30" rx="4" fill="#111827" />
-        <rect x="15" y="88" width="12" height="5"  rx="2" fill="#030712" />
+        <rect x="4"  y="25" width="4" height="5" fill="#111827" />
+        <rect x="4"  y="29" width="5" height="1" fill="#030712" />
       </g>
       <g className="leg-right">
-        <rect x="28" y="62" width="11" height="30" rx="4" fill="#111827" />
-        <rect x="27" y="88" width="12" height="5"  rx="2" fill="#030712" />
+        <rect x="10" y="25" width="4" height="5" fill="#111827" />
+        <rect x="9"  y="29" width="5" height="1" fill="#030712" />
       </g>
-      {/* Status ring */}
-      <circle cx="25" cy="26" r="14" fill="none" stroke={sc(status)} strokeWidth="2" opacity="0.85" />
+
+      {/* status ring */}
+      <circle cx="9" cy="14" r="8" fill="none" stroke={sc(status)} strokeWidth="0.6" opacity="0.9" />
     </svg>
   )
 }
 
-// ─── McGONAGALL ───────────────────────────────────────────────────────────────
-// Tall pointy hat, strict emerald trim, goblet
+// ─── McGONAGALL ────────────────────────────────────────────────────────────────
+// Tall stacked pointed hat, grey bun, dark robes, emerald trim, goblet
 export function McGonagallCharacter({ isWalking, status }: CharProps) {
   return (
-    <svg width="52" height="118" viewBox="0 0 52 118" className={isWalking ? 'agent-walking' : ''}>
-      {/* Pointy witch hat */}
-      <polygon points="26,2 17,24 35,24" fill="#111827" />
-      <ellipse cx="26" cy="24" rx="12" ry="4" fill="#1f2937" />
-      <rect x="14" y="21" width="24" height="4" rx="1.5" fill="#059669" />
-      {/* Hair bun */}
-      <ellipse cx="26" cy="33" rx="8" ry="5" fill="#4b5563" />
-      <circle  cx="26" cy="31" r="3" fill="#374151" />
-      {/* Face (slightly older tone) */}
-      <Face cx={26} cy={40} r={12} skin="#ddb896" status={status} />
-      {/* Brooch */}
-      <circle cx="26" cy="54" r="3.5" fill="#065f46" />
-      <circle cx="26" cy="54" r="1.8" fill="#6ee7b7" />
-      {/* Slim body */}
-      <rect x="18" y="53" width="16" height="40" rx="3" fill="#111827" className="char-body" />
-      <line x1="26" y1="53" x2="26" y2="93" stroke="#059669" strokeWidth="1.5" opacity="0.55" />
-      {/* Left arm + goblet */}
+    <svg width="48" height="102" viewBox="0 0 16 34"
+      className={isWalking ? 'agent-walking' : ''} {...PX}>
+
+      {/* pointy hat — stacked pixel rows */}
+      <rect x="7"  y="0"  width="2"  height="2" fill="#0f172a" />
+      <rect x="6"  y="2"  width="4"  height="2" fill="#0f172a" />
+      <rect x="5"  y="4"  width="6"  height="2" fill="#111827" />
+      <rect x="4"  y="6"  width="8"  height="2" fill="#1f2937" />
+      <rect x="2"  y="8"  width="12" height="2" fill="#0f172a" />   {/* brim */}
+      <rect x="3"  y="8"  width="10" height="1" fill="#059669" />   {/* green band */}
+
+      {/* grey hair — peeks out sides */}
+      <rect x="2"  y="9"  width="2"  height="4" fill="#4b5563" />
+      <rect x="12" y="9"  width="2"  height="4" fill="#4b5563" />
+
+      {/* face (slightly older skin tone) */}
+      <rect x="3"  y="11" width="10" height="8" fill="#ddb896" className="char-body" />
+      <rect x="5"  y="13" width="2"  height="2" fill="#1c1917" />
+      <rect className="eyelid eyelid-l" x="5"  y="13" width="2"  height="2" fill="#ddb896" />
+      <rect x="9"  y="13" width="2"  height="2" fill="#1c1917" />
+      <rect className="eyelid eyelid-r" x="9"  y="13" width="2"  height="2" fill="#ddb896" />
+      <rect x="7"  y="15" width="2"  height="1" fill="#a08060" opacity="0.55" />
+      {/* stern thin mouth */}
+      {status === 'in-meeting'
+        ? <rect className="mouth-talking" x="6" y="17" width="4" height="2" fill="#7c2d12" />
+        : <rect x="6" y="17" width="4" height="1" fill="#a08060" opacity="0.8" />}
+
+      {/* emerald brooch */}
+      <rect x="7"  y="20" width="2"  height="2" fill="#065f46" />
+      <rect x="7"  y="20" width="2"  height="2" fill="#6ee7b7" opacity="0.55" />
+
+      {/* dark body — emerald centre line */}
+      <rect x="3"  y="19" width="10" height="9" fill="#111827" className="char-body" />
+      <rect x="7"  y="19" width="2"  height="9" fill="#059669" opacity="0.35" />
+
+      {/* left arm + goblet */}
       <g className="arm-left">
-        <rect x="9"  y="55" width="9" height="20" rx="4" fill="#111827" />
-        <circle cx="12" cy="76" r="3.5" fill="#d1d5db" />
-        <path d="M4,73 L10,73 L9,83 L5,83 Z" fill="#d97706" />
-        <ellipse cx="7" cy="73" rx="3.5" ry="1.5" fill="#fbbf24" />
-        <rect x="4.5" y="83" width="4.5" height="2" rx="1" fill="#b45309" />
+        <rect x="1"  y="19" width="2" height="7" fill="#111827" />
+        <rect x="1"  y="26" width="2" height="2" fill="#d1d5db" />
+        <rect x="-2" y="25" width="4" height="5" fill="#d97706" />
+        <rect x="-2" y="25" width="4" height="1" fill="#fbbf24" />
       </g>
-      {/* Right arm */}
+      {/* right arm */}
       <g className="arm-right">
-        <rect x="34" y="55" width="9" height="20" rx="4" fill="#111827" />
-        <circle cx="40" cy="76" r="3.5" fill="#d1d5db" />
+        <rect x="13" y="19" width="2" height="7" fill="#111827" />
+        <rect x="13" y="26" width="2" height="2" fill="#d1d5db" />
       </g>
-      {/* Slim legs */}
+
+      {/* legs */}
       <g className="leg-left">
-        <rect x="17" y="89" width="10" height="26" rx="4" fill="#0f172a" />
-        <rect x="16" y="111" width="11" height="5"  rx="2" fill="#020617" />
+        <rect x="3"  y="28" width="4" height="6" fill="#0f172a" />
+        <rect x="3"  y="33" width="4" height="1" fill="#020617" />
       </g>
       <g className="leg-right">
-        <rect x="28" y="89" width="10" height="26" rx="4" fill="#0f172a" />
-        <rect x="27" y="111" width="11" height="5"  rx="2" fill="#020617" />
+        <rect x="9"  y="28" width="4" height="6" fill="#0f172a" />
+        <rect x="9"  y="33" width="4" height="1" fill="#020617" />
       </g>
-      {/* Status ring */}
-      <circle cx="26" cy="40" r="14" fill="none" stroke={sc(status)} strokeWidth="2" opacity="0.85" />
+
+      {/* status ring */}
+      <circle cx="8" cy="19" r="7" fill="none" stroke={sc(status)} strokeWidth="0.6" opacity="0.9" />
     </svg>
   )
 }
 
-// ─── SNAPE ────────────────────────────────────────────────────────────────────
-// Long dark curtain hair, wide black billowing robes, arms crossed, pale skin
+// ─── SNAPE ─────────────────────────────────────────────────────────────────────
+// Long dark curtain hair, pale face, wide billowing black robes, arms crossed
 export function SnapeCharacter({ isWalking, status }: CharProps) {
   return (
-    <svg width="58" height="105" viewBox="0 0 58 105" className={isWalking ? 'agent-walking' : ''}>
-      {/* Curtain hair */}
-      <rect x="13" y="14" width="8"  height="32" rx="4" fill="#1c1917" />
-      <rect x="37" y="14" width="8"  height="32" rx="4" fill="#1c1917" />
-      <ellipse cx="29" cy="15" rx="15" ry="10" fill="#111827" />
-      {/* Face — pale */}
-      <Face cx={29} cy={25} r={12} skin="#d4bfae" status={status} />
-      {/* High collar */}
-      <path d="M21,38 L29,44 L37,38 Q33,35 29,35 Q25,35 21,38 Z" fill="#1e293b" />
-      {/* Wide billowing body */}
-      <path d="M18,41 L11,98 L47,98 L40,41 Z" fill="#0f172a" className="char-body" />
-      <path d="M24,41 L19,98 L29,98 L28,41 Z" fill="#1e293b" opacity="0.4" />
-      {/* Arms crossed — signature Snape pose */}
+    <svg width="60" height="84" viewBox="0 0 20 28"
+      className={isWalking ? 'agent-walking' : ''} {...PX}>
+
+      {/* curtain hair — long on sides */}
+      <rect x="4"  y="0"  width="12" height="4" fill="#111827" />
+      <rect x="3"  y="2"  width="3"  height="10" fill="#1c1917" />
+      <rect x="14" y="2"  width="3"  height="10" fill="#1c1917" />
+
+      {/* face — pale */}
+      <rect x="5"  y="4"  width="10" height="8" fill={SKIN_P} className="char-body" />
+      <rect x="7"  y="6"  width="2"  height="2" fill="#1c1917" />
+      <rect className="eyelid eyelid-l" x="7"  y="6"  width="2"  height="2" fill={SKIN_P} />
+      <rect x="11" y="6"  width="2"  height="2" fill="#1c1917" />
+      <rect className="eyelid eyelid-r" x="11" y="6"  width="2"  height="2" fill={SKIN_P} />
+      <rect x="9"  y="8"  width="2"  height="1" fill="#9a7a6a" opacity="0.5" />
+      {/* thin stern mouth */}
+      {status === 'in-meeting'
+        ? <rect className="mouth-talking" x="8" y="10" width="4" height="2" fill="#7c2d12" />
+        : <rect x="8" y="10" width="4" height="1" fill="#806050" opacity="0.8" />}
+
+      {/* high collar */}
+      <rect x="7"  y="12" width="6"  height="2" fill="#1e293b" />
+
+      {/* wide billowing robe */}
+      <rect x="2"  y="13" width="16" height="10" fill="#0f172a" className="char-body" />
+      <rect x="4"  y="13" width="3"  height="10" fill="#1e293b" opacity="0.45" />
+
+      {/* arms — signature crossed pose */}
       <g className="arm-left">
-        <path d="M18,44 C13,50 14,58 18,64 C22,67 29,64 33,61 C28,58 22,54 20,47 Z" fill="#111827" />
-        <circle cx="18" cy="65" r="3.5" fill="#b8a89a" />
+        <rect x="0"  y="13" width="2" height="7" fill="#111827" />
+        <rect x="0"  y="20" width="2" height="2" fill="#b8a89a" />
       </g>
       <g className="arm-right">
-        <path d="M40,44 C45,50 44,58 40,64 C36,67 29,64 25,61 C30,58 36,54 38,47 Z" fill="#0f172a" />
-        <circle cx="40" cy="65" r="3.5" fill="#b8a89a" />
+        <rect x="18" y="13" width="2" height="7" fill="#0f172a" />
+        <rect x="18" y="20" width="2" height="2" fill="#b8a89a" />
       </g>
-      {/* Legs */}
+
+      {/* legs */}
       <g className="leg-left">
-        <rect x="17" y="90" width="11" height="22" rx="4" fill="#0f172a" />
-        <rect x="16" y="108" width="12" height="4"  rx="2" fill="#020617" />
+        <rect x="3"  y="23" width="5" height="5" fill="#0f172a" />
+        <rect x="3"  y="27" width="5" height="1" fill="#020617" />
       </g>
       <g className="leg-right">
-        <rect x="30" y="90" width="11" height="22" rx="4" fill="#0f172a" />
-        <rect x="29" y="108" width="12" height="4"  rx="2" fill="#020617" />
+        <rect x="12" y="23" width="5" height="5" fill="#0f172a" />
+        <rect x="12" y="27" width="5" height="1" fill="#020617" />
       </g>
-      {/* Status ring */}
-      <circle cx="29" cy="25" r="14" fill="none" stroke={sc(status)} strokeWidth="2" opacity="0.85" />
+
+      {/* status ring */}
+      <circle cx="10" cy="13" r="8" fill="none" stroke={sc(status)} strokeWidth="0.6" opacity="0.9" />
     </svg>
   )
 }
 
-// ─── HAGRID ───────────────────────────────────────────────────────────────────
-// HUGE — 1.6× wider, wild brown hair, enormous beard, big coat, lantern
+// ─── HAGRID ─────────────────────────────────────────────────────────────────────
+// Huge — 1.5× scale, wild bushy brown hair, enormous beard, coat, lantern
 export function HagridCharacter({ isWalking, status }: CharProps) {
   return (
-    <svg width="80" height="116" viewBox="0 0 80 116" className={isWalking ? 'agent-walking' : ''}>
-      {/* Wild enormous hair */}
-      <ellipse cx="40" cy="18" rx="28" ry="20" fill="#44403c" />
-      <ellipse cx="14" cy="26" rx="15" ry="18" fill="#57534e" />
-      <ellipse cx="66" cy="26" rx="15" ry="18" fill="#57534e" />
-      {/* Face — warmer/ruddier tone */}
-      <Face cx={40} cy={30} r={15} skin="#c8845c" status={status} />
-      {/* Big bushy beard */}
-      <ellipse cx="40" cy="51" rx="13" ry="9" fill="#57534e" />
-      {/* Enormous coat */}
-      <path d="M20,50 L13,103 L67,103 L60,50 Z" fill="#78350f" className="char-body" />
-      <path d="M32,50 L35,68 L40,62 L45,68 L48,50 Z" fill="#92400e" opacity="0.65" />
-      {/* Giant left arm + lantern */}
+    <svg width="72" height="96" viewBox="0 0 24 32"
+      className={isWalking ? 'agent-walking' : ''} {...PX}>
+
+      {/* enormous wild hair */}
+      <rect x="2"  y="0"  width="20" height="7"  fill="#44403c" />
+      <rect x="0"  y="2"  width="4"  height="10" fill="#57534e" />
+      <rect x="20" y="2"  width="4"  height="10" fill="#57534e" />
+      <rect x="4"  y="0"  width="16" height="3"  fill="#6b7280" opacity="0.4" />
+
+      {/* big ruddy face */}
+      <rect x="5"  y="6"  width="14" height="10" fill={SKIN_R} className="char-body" />
+      {/* eyes */}
+      <rect x="7"  y="8"  width="3"  height="2" fill="#1c1917" />
+      <rect className="eyelid eyelid-l" x="7"  y="8"  width="3"  height="2" fill={SKIN_R} />
+      <rect x="14" y="8"  width="3"  height="2" fill="#1c1917" />
+      <rect className="eyelid eyelid-r" x="14" y="8"  width="3"  height="2" fill={SKIN_R} />
+      <rect x="10" y="10" width="4"  height="2" fill="#a06040" opacity="0.45" />
+      {status === 'in-meeting'
+        ? <rect className="mouth-talking" x="9" y="13" width="6" height="3" fill="#7c2d12" />
+        : <rect x="9" y="13" width="6" height="1" fill="#b07040" opacity="0.7" />}
+
+      {/* giant bushy beard */}
+      <rect x="4"  y="14" width="16" height="6"  fill="#57534e" />
+      <rect x="5"  y="18" width="14" height="3"  fill="#44403c" />
+
+      {/* enormous brown coat */}
+      <rect x="2"  y="19" width="20" height="8"  fill="#78350f" className="char-body" />
+      <rect x="8"  y="19" width="8"  height="8"  fill="#92400e" opacity="0.35" />
+
+      {/* giant left arm + lantern */}
       <g className="arm-left">
-        <path d="M20,54 L9,82 L18,86 L25,60 Z" fill="#7c2d12" />
-        <circle cx="11" cy="85" r="5" fill="#c8845c" />
-        <rect x="2"  y="82" width="10" height="14" rx="2"   fill="#854d0e" />
-        <rect x="3"  y="83" width="8"  height="12" rx="1.5" fill="#fde68a" opacity="0.55" />
-        <line x1="7" y1="80" x2="7" y2="82" stroke="#a16207" strokeWidth="1.5" />
+        <rect x="0"  y="19" width="2" height="8" fill="#7c2d12" />
+        <rect x="0"  y="27" width="2" height="3" fill={SKIN_R} />
+        <rect x="-4" y="27" width="5" height="6" fill="#854d0e" />
+        <rect x="-3" y="28" width="3" height="4" fill="#fde68a" opacity="0.55" />
+        <rect x="-1" y="25" width="1" height="3" fill="#a16207" />
       </g>
-      {/* Giant right arm */}
+      {/* giant right arm */}
       <g className="arm-right">
-        <path d="M60,54 L71,82 L62,86 L55,60 Z" fill="#7c2d12" />
-        <circle cx="69" cy="85" r="5" fill="#c8845c" />
+        <rect x="22" y="19" width="2" height="8" fill="#7c2d12" />
+        <rect x="22" y="27" width="2" height="3" fill={SKIN_R} />
       </g>
-      {/* Large legs */}
+
+      {/* big legs */}
       <g className="leg-left">
-        <rect x="20" y="96" width="18" height="24" rx="5" fill="#44403c" />
-        <rect x="19" y="116" width="19" height="6"  rx="3" fill="#1c1917" />
+        <rect x="3"  y="27" width="7" height="5" fill="#44403c" />
+        <rect x="3"  y="31" width="8" height="1" fill="#1c1917" />
       </g>
       <g className="leg-right">
-        <rect x="42" y="96" width="18" height="24" rx="5" fill="#44403c" />
-        <rect x="41" y="116" width="19" height="6"  rx="3" fill="#1c1917" />
+        <rect x="14" y="27" width="7" height="5" fill="#44403c" />
+        <rect x="13" y="31" width="8" height="1" fill="#1c1917" />
       </g>
-      {/* Status ring */}
-      <circle cx="40" cy="30" r="17" fill="none" stroke={sc(status)} strokeWidth="2.5" opacity="0.85" />
+
+      {/* status ring */}
+      <circle cx="12" cy="19" r="10" fill="none" stroke={sc(status)} strokeWidth="0.8" opacity="0.9" />
     </svg>
   )
 }
