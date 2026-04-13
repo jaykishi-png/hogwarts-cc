@@ -21,12 +21,15 @@ async function resolveUrl(url: string): Promise<string> {
 // ─── Frame.io URL parser ──────────────────────────────────────────────────────
 
 function parseFrameioUrl(url: string): { type: 'review' | 'asset'; id: string } | null {
-  // Public review link:  https://app.frame.io/reviews/{uuid}
-  const reviewMatch = url.match(/app\.frame\.io\/reviews\/([a-zA-Z0-9_-]+)/)
+  // Review links — all known formats:
+  //   https://app.frame.io/reviews/{uuid}
+  //   https://next.frame.io/share/{uuid}   ← f.io short links resolve here
+  const reviewMatch = url.match(/(?:app\.frame\.io\/reviews|next\.frame\.io\/share)\/([a-zA-Z0-9_-]+)/)
   if (reviewMatch) return { type: 'review', id: reviewMatch[1] }
 
-  // Direct asset link:   https://app.frame.io/projects/.../assets/{uuid}
-  //                      https://app.frame.io/player/{uuid}
+  // Direct asset link:
+  //   https://app.frame.io/projects/.../assets/{uuid}
+  //   https://app.frame.io/player/{uuid}
   const assetMatch = url.match(/(?:assets|player)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i)
   if (assetMatch) return { type: 'asset', id: assetMatch[1] }
 
