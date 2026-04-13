@@ -84,10 +84,13 @@ export async function fetchNotionTasks(databaseId: string): Promise<NotionTask[]
       }
     })
     .filter(task => {
+      const t = task.title.toLowerCase()
       const s = task.status.toLowerCase()
-      // Skip EOD reports entirely
-      if (task.title.toLowerCase().includes('eod report')) return false
-      // Only include active tasks
+      // Skip any EOD / template pages — they are reports, not tasks
+      if (t.includes('eod report')) return false
+      if (t.includes('eod template')) return false
+      if (t.includes('daily eod')) return false
+      // Only include tasks whose status is explicitly active work
       return ACTIVE_STATUSES.some(active => s.includes(active))
     })
 }

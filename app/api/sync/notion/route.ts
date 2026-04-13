@@ -24,8 +24,11 @@ export async function POST(_req: NextRequest) {
 
     // ── Inbound: Notion → local DB ───────────────────────────────────────────
     for (const nt of notionTasks) {
-      // Skip EOD Report pages — these are reports, not tasks
-      if (nt.title.toLowerCase().includes('eod report')) continue
+      // Skip EOD / template pages — these are reports, not tasks
+      const titleLower = nt.title.toLowerCase()
+      if (titleLower.includes('eod report')) continue
+      if (titleLower.includes('eod template')) continue
+      if (titleLower.includes('daily eod')) continue
 
       // Skip pages with "Sent" status
       const doneStatuses = ['done', 'complete', 'completed', 'finished', 'sent']
