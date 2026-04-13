@@ -21,13 +21,22 @@ async function resolveUrl(url: string): Promise<string> {
 // ─── Frame.io URL parser ──────────────────────────────────────────────────────
 
 function parseFrameioUrl(url: string): { type: 'review' | 'asset'; id: string } | null {
-  // Review links — all known formats:
-  //   https://app.frame.io/reviews/{uuid}
-  //   https://next.frame.io/share/{uuid}   ← f.io short links resolve here
-  const reviewMatch = url.match(/(?:app\.frame\.io\/reviews|next\.frame\.io\/share)\/([a-zA-Z0-9_-]+)/)
-  if (reviewMatch) return { type: 'review', id: reviewMatch[1] }
+  // next.frame.io direct asset link:
+  //   https://next.frame.io/project/{project_id}/view/{asset_id}
+  const nextViewMatch = url.match(/next\.frame\.io\/project\/[^/]+\/view\/([0-9a-f-]{36})/i)
+  if (nextViewMatch) return { type: 'asset', id: nextViewMatch[1] }
 
-  // Direct asset link:
+  // next.frame.io share / f.io short-link resolved:
+  //   https://next.frame.io/share/{uuid}
+  const nextShareMatch = url.match(/next\.frame\.io\/share\/([a-zA-Z0-9_-]+)/)
+  if (nextShareMatch) return { type: 'review', id: nextShareMatch[1] }
+
+  // Legacy app.frame.io review link:
+  //   https://app.frame.io/reviews/{uuid}
+  const legacyReviewMatch = url.match(/app\.frame\.io\/reviews\/([a-zA-Z0-9_-]+)/)
+  if (legacyReviewMatch) return { type: 'review', id: legacyReviewMatch[1] }
+
+  // Legacy app.frame.io direct asset link:
   //   https://app.frame.io/projects/.../assets/{uuid}
   //   https://app.frame.io/player/{uuid}
   const assetMatch = url.match(/(?:assets|player)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i)
@@ -44,6 +53,13 @@ async function frameioGet(path: string) {
   })
   if (!res.ok) {
     const body = await res.text().catch(() => '')
+    if (res.status === 403) {
+      throw new Error(
+        `Frame.io 403: Your token doesn't have access to this asset.\n\n` +
+        `This usually means your token was created under a different team/workspace than the one that owns this video.\n\n` +
+        `Fix: Go to developer.frame.io → delete your current token → create a new one while logged into the correct team.`
+      )
+    }
     throw new Error(`Frame.io ${res.status}: ${body.slice(0, 200)}`)
   }
   return res.json()
