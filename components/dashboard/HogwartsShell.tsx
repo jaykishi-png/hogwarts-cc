@@ -6,7 +6,9 @@ import { format } from 'date-fns'
 import {
   Loader2, Send, Users, Zap, RotateCcw, Wifi,
   Home, Bot, MessageSquare, Layers, Globe, Activity, Settings2, Monitor,
-  Clapperboard,
+  Clapperboard, ChevronRight, ExternalLink, RefreshCw, Terminal,
+  Cpu, Database, Bell, Palette, SlidersHorizontal, BookOpen,
+  CheckCircle2, XCircle, Clock, BarChart2,
 } from 'lucide-react'
 import { NavTabs } from './NavTabs'
 import VideoQCProcessor from './VideoQCProcessor'
@@ -636,6 +638,28 @@ function Furniture({ roomId, occupied }: { roomId: RoomId; occupied: boolean }) 
   return null
 }
 
+// ─── Setting toggle (used in Settings panel) ─────────────────────────────────
+
+function SettingToggle({ label, sub, defaultOn = false, disabled = false }: { label: string; sub: string; defaultOn?: boolean; disabled?: boolean }) {
+  const [on, setOn] = useState(defaultOn)
+  return (
+    <div className={`flex items-center justify-between ${disabled ? 'opacity-40' : ''}`}>
+      <div>
+        <p className="text-[11px] text-gray-300">{label}</p>
+        <p className="text-[9px] text-gray-600">{sub}</p>
+      </div>
+      <button
+        disabled={disabled}
+        onClick={() => !disabled && setOn(p => !p)}
+        className={`w-8 h-4.5 rounded-full transition-colors relative flex-shrink-0 ${on ? 'bg-purple-700' : 'bg-[#1e2030]'}`}
+        style={{ height: 18, width: 32 }}
+      >
+        <span className={`absolute top-0.5 w-3.5 h-3.5 bg-white rounded-full transition-transform ${on ? 'translate-x-4' : 'translate-x-0.5'}`} />
+      </button>
+    </div>
+  )
+}
+
 // ─── Left toolbar ─────────────────────────────────────────────────────────────
 
 function LeftToolbar({ active, setActive }: { active: string; setActive: (k: string) => void }) {
@@ -887,6 +911,18 @@ export function HogwartsShell() {
       pushLog(`${name} walked to the Conference Room.`, 'move')
     }
   }
+  function triggerRandomMeeting() {
+    const subset = [...agents].sort(() => Math.random() - 0.5).slice(0, 3 + Math.floor(Math.random() * 3))
+    const names  = subset.map(a => a.name)
+    startMoving(names)
+    setAgents(p => p.map(a => names.includes(a.name) ? { ...a, currentRoom: 'great-hall', status: 'in-meeting' } : a))
+    pushLog(`Random meeting: ${names.join(', ')} assembled.`, 'meeting')
+    setTimeout(() => {
+      startMoving(names)
+      setAgents(p => p.map(a => names.includes(a.name) ? { ...a, currentRoom: a.homeRoom, status: 'online' } : a))
+      pushLog('Meeting adjourned — agents back to desks.', 'move')
+    }, 30_000)
+  }
   function assembleMeeting() {
     startMoving(agents.map(a => a.name))
     setAgents(p => p.map(a => ({ ...a, currentRoom: 'great-hall', status: 'in-meeting' })))
@@ -1105,9 +1141,263 @@ export function HogwartsShell() {
             {/* ── QC Panel ──────────────────────────────────────────────────── */}
             {activeTool === 'qc' && <VideoQCProcessor pushLog={pushLog} />}
 
+            {/* ── Agents Panel ──────────────────────────────────────────────── */}
+            {activeTool === 'agents' && (
+              <div className="flex-1 min-w-0 flex flex-col gap-3 min-h-0 overflow-y-auto">
+                <div className="flex-shrink-0">
+                  <p className="text-[10px] font-semibold text-gray-700 uppercase tracking-wider mb-2">Hogwarts AI Taskforce — 7 Agents</p>
+                  <div className="grid grid-cols-1 gap-2">
+                    {AGENTS_DEF.map(agent => {
+                      const live = agents.find(a => a.name === agent.name)!
+                      const statusColor = live.status === 'online' ? 'bg-emerald-400' : live.status === 'working' ? 'bg-amber-400' : live.status === 'in-meeting' ? 'bg-blue-400' : 'bg-gray-500'
+                      return (
+                        <div key={agent.name} className={`rounded-xl border p-3 ${COLOR_MAP[agent.color]}`}>
+                          <div className="flex items-start gap-3">
+                            <div className="relative flex-shrink-0">
+                              <AgentAvatar avatar={agent.avatar} name={agent.name} color={agent.color} size={36} />
+                              <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-[#0d0f1a] ${statusColor}`} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-0.5">
+                                <span className={`font-bold text-xs uppercase tracking-wider ${TEXT_MAP[agent.color]}`}>{agent.name}</span>
+                                <span className="text-[9px] text-gray-600 capitalize">{live.status.replace('-', ' ')}</span>
+                              </div>
+                              <p className="text-[11px] text-gray-400 mb-1.5">{agent.role}</p>
+                              <div className="flex flex-wrap gap-1">
+                                {agent.commands.map(cmd => (
+                                  <button
+                                    key={cmd}
+                                    onClick={() => { mentionAgent(agent.name); setActiveTool('office') }}
+                                    className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${BADGE_MAP[agent.color]} border-current/20 hover:opacity-80 transition-opacity`}
+                                  >
+                                    {cmd}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => { mentionAgent(agent.name); setActiveTool('office') }}
+                              className="flex-shrink-0 text-gray-600 hover:text-gray-300 transition-colors"
+                              title="Chat with agent"
+                            >
+                              <ChevronRight size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Activity Panel ────────────────────────────────────────────── */}
+            {activeTool === 'activity' && (
+              <div className="flex-1 min-w-0 flex flex-col gap-3 min-h-0">
+                <div className="flex-shrink-0 flex items-center justify-between">
+                  <p className="text-[10px] font-semibold text-gray-700 uppercase tracking-wider">Activity Log</p>
+                  <div className="flex gap-3 text-[10px] text-gray-600">
+                    <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />{onlineCount} online</span>
+                    <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" />{inMeetingCount} in meeting</span>
+                  </div>
+                </div>
+                {/* Stats row */}
+                <div className="flex-shrink-0 grid grid-cols-3 gap-2">
+                  {[
+                    { label: 'Total Events', value: log.length, icon: BarChart2, color: 'text-purple-400' },
+                    { label: 'Chat Events', value: log.filter(l => l.type === 'chat').length, icon: MessageSquare, color: 'text-blue-400' },
+                    { label: 'Meetings', value: log.filter(l => l.type === 'meeting').length, icon: Users, color: 'text-amber-400' },
+                  ].map(stat => (
+                    <div key={stat.label} className="bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-3 flex items-center gap-2.5">
+                      <stat.icon size={16} className={stat.color} />
+                      <div>
+                        <p className="text-sm font-bold text-gray-200">{stat.value}</p>
+                        <p className="text-[9px] text-gray-600">{stat.label}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {/* Full log */}
+                <div className="flex-1 min-h-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] overflow-y-auto">
+                  <div className="p-3 space-y-1">
+                    {log.length === 0 && <p className="text-[10px] text-gray-700 text-center py-4">No activity yet</p>}
+                    {log.map((entry, i) => {
+                      const icon = entry.type === 'chat' ? MessageSquare : entry.type === 'meeting' ? Users : entry.type === 'move' ? ChevronRight : Activity
+                      const color = entry.type === 'chat' ? 'text-blue-400' : entry.type === 'meeting' ? 'text-amber-400' : entry.type === 'move' ? 'text-emerald-400' : 'text-purple-400'
+                      const Icon = icon
+                      return (
+                        <div key={i} className="flex items-start gap-2 py-1 border-b border-[#1e2030]/60 last:border-0">
+                          <Icon size={10} className={`${color} mt-0.5 flex-shrink-0`} />
+                          <p className="text-[10px] text-gray-400 leading-relaxed flex-1">{entry.msg}</p>
+                          <span className="text-[9px] text-gray-700 flex-shrink-0 font-mono">{entry.time}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Environment Panel ─────────────────────────────────────────── */}
+            {activeTool === 'env' && (
+              <div className="flex-1 min-w-0 flex flex-col gap-3 min-h-0 overflow-y-auto">
+                <p className="flex-shrink-0 text-[10px] font-semibold text-gray-700 uppercase tracking-wider">Connected Integrations</p>
+                <div className="space-y-2">
+                  {[
+                    { name: 'OpenAI',    sub: 'GPT-4o · Whisper · Embeddings', icon: Cpu,      color: 'text-emerald-400', status: 'connected', env: 'OPENAI_API_KEY' },
+                    { name: 'Notion',    sub: 'Tasks · EOD database',          icon: BookOpen, color: 'text-gray-300',    status: 'connected', env: 'NOTION_TOKEN' },
+                    { name: 'Slack',     sub: 'Bot token · DM delivery',       icon: MessageSquare, color: 'text-purple-400', status: 'connected', env: 'SLACK_BOT_TOKEN' },
+                    { name: 'Monday',    sub: 'Project boards · items',        icon: BarChart2,color: 'text-amber-400',   status: 'connected', env: 'MONDAY_API_TOKEN' },
+                    { name: 'Frame.io',  sub: 'Video QC · review links',       icon: Clapperboard, color: 'text-red-400', status: 'connected', env: 'FRAMEIO_TOKEN' },
+                    { name: 'Google',    sub: 'Calendar · Gmail',              icon: Globe,    color: 'text-blue-400',    status: 'connected', env: 'GOOGLE_CLIENT_ID' },
+                    { name: 'Anthropic', sub: 'Claude API (backup)',           icon: Terminal, color: 'text-orange-400',  status: 'connected', env: 'ANTHROPIC_API_KEY' },
+                  ].map(svc => (
+                    <div key={svc.name} className="bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-3 flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-[#1e2030] flex items-center justify-center flex-shrink-0">
+                        <svc.icon size={14} className={svc.color} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-gray-200">{svc.name}</p>
+                        <p className="text-[10px] text-gray-600 truncate">{svc.sub}</p>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <CheckCircle2 size={12} className="text-emerald-400" />
+                        <span className="text-[10px] text-emerald-400">connected</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex-shrink-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-3">
+                  <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Agent Models</p>
+                  <div className="space-y-1.5">
+                    {AGENTS_DEF.map(a => (
+                      <div key={a.name} className="flex items-center justify-between">
+                        <span className={`text-[10px] font-medium ${TEXT_MAP[a.color]}`}>{a.name}</span>
+                        <span className="text-[9px] font-mono text-gray-600 bg-[#07080e] border border-[#1e2030] rounded px-1.5 py-0.5">
+                          {a.name === 'DUMBLEDORE' ? 'gpt-4o' : 'gpt-4o-mini'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Layout Panel ──────────────────────────────────────────────── */}
+            {activeTool === 'layout' && (
+              <div className="flex-1 min-w-0 flex flex-col gap-3 min-h-0 overflow-y-auto">
+                <p className="flex-shrink-0 text-[10px] font-semibold text-gray-700 uppercase tracking-wider">Office Layout</p>
+                <div className="space-y-3">
+                  {/* Room overview */}
+                  <div className="bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-3">
+                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2.5">Room Assignments</p>
+                    <div className="space-y-2">
+                      {(Object.entries(ROOMS) as [RoomId, RoomConfig][]).map(([roomId, room]) => {
+                        const occupants = agents.filter(a => a.homeRoom === roomId)
+                        return (
+                          <div key={roomId} className="flex items-center gap-2">
+                            <span className="text-sm">{room.emoji}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-[10px] font-medium ${room.textColor}`}>{room.label}</p>
+                              <p className="text-[9px] text-gray-700">{room.sublabel}</p>
+                            </div>
+                            <div className="flex gap-1">
+                              {occupants.map(o => (
+                                <div key={o.name} className={`text-[8px] font-bold px-1 py-0.5 rounded ${BADGE_MAP[AGENTS_DEF.find(a => a.name === o.name)?.color ?? 'purple']}`}>
+                                  {o.name.slice(0, 3)}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  {/* Agent positions */}
+                  <div className="bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-3">
+                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2.5">Current Positions</p>
+                    <div className="space-y-1.5">
+                      {agents.map(agent => {
+                        const room = ROOMS[agent.currentRoom]
+                        return (
+                          <div key={agent.name} className="flex items-center gap-2">
+                            <AgentAvatar avatar={AGENTS_DEF.find(a => a.name === agent.name)!.avatar} name={agent.name} color={agent.color} size={20} />
+                            <span className={`text-[10px] font-semibold ${TEXT_MAP[agent.color]}`}>{agent.name}</span>
+                            <ChevronRight size={10} className="text-gray-700" />
+                            <span className="text-[10px] text-gray-500">{room.emoji} {room.label}</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  {/* Controls */}
+                  <div className="bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-3">
+                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2.5">Controls</p>
+                    <div className="space-y-2">
+                      <button
+                        onClick={() => { setAgents(INITIAL_AGENTS); pushLog('Office reset — all agents back to home rooms.', 'status') }}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-[#07080e] border border-[#1e2030] hover:border-purple-700/40 hover:text-gray-200 text-gray-500 text-[11px] transition-all"
+                      >
+                        <RotateCcw size={11} /> Reset all agents to home rooms
+                      </button>
+                      <button
+                        onClick={() => triggerRandomMeeting()}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-[#07080e] border border-[#1e2030] hover:border-blue-700/40 hover:text-gray-200 text-gray-500 text-[11px] transition-all"
+                      >
+                        <Users size={11} /> Trigger random team meeting
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Settings Panel ────────────────────────────────────────────── */}
+            {activeTool === 'settings' && (
+              <div className="flex-1 min-w-0 flex flex-col gap-3 min-h-0 overflow-y-auto">
+                <p className="flex-shrink-0 text-[10px] font-semibold text-gray-700 uppercase tracking-wider">Settings</p>
+                <div className="space-y-3">
+                  <div className="bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-3 space-y-3">
+                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">App</p>
+                    {[
+                      { label: 'Agent animations', sub: 'Walking & blinking sprites', default: true },
+                      { label: 'Random meetings', sub: 'Agents auto-walk to conference room', default: true },
+                      { label: 'Activity logging', sub: 'Track all agent events', default: true },
+                      { label: 'Sound effects', sub: 'Coming soon', default: false, disabled: true },
+                    ].map(s => (
+                      <SettingToggle key={s.label} label={s.label} sub={s.sub} defaultOn={s.default} disabled={s.disabled} />
+                    ))}
+                  </div>
+                  <div className="bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-3 space-y-3">
+                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Notifications</p>
+                    {[
+                      { label: 'Brief complete', sub: 'Alert when /brief finishes', default: true },
+                      { label: 'QC complete', sub: 'Alert when video QC finishes', default: true },
+                      { label: 'Agent errors', sub: 'Alert on API failures', default: false },
+                    ].map(s => (
+                      <SettingToggle key={s.label} label={s.label} sub={s.sub} defaultOn={s.default} />
+                    ))}
+                  </div>
+                  <div className="bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-3">
+                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2.5">About</p>
+                    <div className="space-y-1.5 text-[10px] text-gray-600">
+                      <div className="flex justify-between"><span>Version</span><span className="font-mono text-gray-400">v1.0</span></div>
+                      <div className="flex justify-between"><span>Framework</span><span className="font-mono text-gray-400">Next.js 16</span></div>
+                      <div className="flex justify-between"><span>AI Models</span><span className="font-mono text-gray-400">GPT-4o · Whisper</span></div>
+                      <div className="flex justify-between"><span>Deployment</span><span className="font-mono text-gray-400">Vercel</span></div>
+                    </div>
+                    <a href="https://github.com/jaykishi-png/hogwarts-cc" target="_blank" rel="noreferrer"
+                      className="mt-3 flex items-center gap-1.5 text-[10px] text-purple-400 hover:text-purple-300 transition-colors">
+                      <ExternalLink size={10} /> View on GitHub
+                    </a>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* ── Floor plan ────────────────────────────────────────────────── */}
             <div
-              className={`flex-1 min-w-0 relative rounded-xl overflow-hidden border-2 border-[#1a0e06] ${activeTool === 'qc' ? 'hidden' : ''}`}
+              className={`flex-1 min-w-0 relative rounded-xl overflow-hidden border-2 border-[#1a0e06] ${['qc','agents','activity','env','layout','settings'].includes(activeTool) ? 'hidden' : ''}`}
               style={{
                 background: '#8b5c30',
                 backgroundImage: [
@@ -1427,7 +1717,12 @@ export function HogwartsShell() {
             onlineCount={onlineCount}
             inMeetingCount={inMeetingCount}
             activeBotTab={activeBotTab}
-            setActiveBotTab={setActiveBotTab}
+            setActiveBotTab={(t) => {
+              setActiveBotTab(t)
+              // Map bottom bar tabs to sidebar panels
+              const map: Record<string, string> = { environment: 'env', layout: 'layout', settings: 'settings' }
+              if (map[t]) setActiveTool(map[t])
+            }}
           />
 
         </div>
