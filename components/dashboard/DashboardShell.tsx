@@ -198,6 +198,12 @@ export function DashboardShell() {
           </div>
         ) : (
           <div className="space-y-6">
+
+            {/* Hogwarts Agent Panel — top of page */}
+            <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
+              <HogwartsPanel />
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
 
               {/* Column 1: Top Priorities + Quick Add */}
@@ -298,10 +304,6 @@ export function DashboardShell() {
               <EodTasksPanel />
             </div>
 
-            {/* Hogwarts Agent Panel */}
-            <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4">
-              <HogwartsPanel />
-            </div>
 
           </div>
         )}
