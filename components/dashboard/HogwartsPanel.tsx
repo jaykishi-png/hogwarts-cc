@@ -36,6 +36,8 @@ const BADGE_MAP: Record<string, string> = {
 export function HogwartsPanel() {
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState('')
+  const [respondingAgent, setRespondingAgent] = useState('')
+  const [respondingColor, setRespondingColor] = useState('purple')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -44,6 +46,7 @@ export function HogwartsPanel() {
     setLoading(true)
     setError('')
     setAnswer('')
+    setRespondingAgent('')
     try {
       const res = await fetch('/api/agents/ask', {
         method: 'POST',
@@ -52,7 +55,11 @@ export function HogwartsPanel() {
       })
       const data = await res.json()
       if (data.error) setError(data.error)
-      else setAnswer(data.answer)
+      else {
+        setAnswer(data.answer)
+        setRespondingAgent(data.agent ?? 'DUMBLEDORE')
+        setRespondingColor(data.color ?? 'purple')
+      }
     } catch (err) {
       setError(String(err))
     } finally {
@@ -116,7 +123,7 @@ export function HogwartsPanel() {
               value={question}
               onChange={e => setQuestion(e.target.value)}
               onKeyDown={handleKey}
-              placeholder="Ask DUMBLEDORE anything..."
+              placeholder="Ask anything — auto-routed to the right agent. Or @snape, @hagrid, etc."
               className="w-full bg-[#0f1117] border border-[#2a2d3a] rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-purple-700/60 transition-colors"
             />
           </div>
@@ -135,11 +142,15 @@ export function HogwartsPanel() {
           <div className={`rounded-lg border p-3 text-xs leading-relaxed whitespace-pre-wrap ${
             error
               ? 'bg-red-900/20 border-red-800/40 text-red-300'
-              : 'bg-purple-900/10 border-purple-800/30 text-gray-300'
+              : `${BADGE_MAP[respondingColor] ? `bg-${respondingColor}-900/10` : 'bg-purple-900/10'} border-[#2a2d3a] text-gray-300`
           }`}>
             {error ? `⚠️ ${error}` : (
               <>
-                <span className="text-purple-400 font-semibold text-[10px] uppercase tracking-wider block mb-1.5">DUMBLEDORE</span>
+                <span className={`font-semibold text-[10px] uppercase tracking-wider block mb-1.5 ${
+                  COLOR_MAP[respondingColor]?.split(' ')[2] ?? 'text-purple-300'
+                }`}>
+                  {respondingAgent}
+                </span>
                 {answer}
               </>
             )}

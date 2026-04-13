@@ -58,28 +58,38 @@ export async function fetchNotionTasks(databaseId: string): Promise<NotionTask[]
     page_size: 100,
   })
 
+  // Only statuses that represent active work
+  const ACTIVE_STATUSES = ['in progress', 'in-progress', 'working on it', 'active']
+
   return response.results
     .filter((page): page is PageObjectResponse => 'properties' in page)
     .map(page => {
-    const props = page.properties ?? {}
+      const props = page.properties ?? {}
 
-    // Try common property names for title, status, due date
-    const titleProp = props['Name'] ?? props['Title'] ?? props['Task']
-    const statusProp = props['Status'] ?? props['status']
-    const dueDateProp = props['Due Date'] ?? props['Due'] ?? props['Date']
-    const priorityProp = props['Priority'] ?? props['priority']
+      // Try common property names for title, status, due date
+      const titleProp = props['Name'] ?? props['Title'] ?? props['Task']
+      const statusProp = props['Status'] ?? props['status']
+      const dueDateProp = props['Due Date'] ?? props['Due'] ?? props['Date']
+      const priorityProp = props['Priority'] ?? props['priority']
 
-    return {
-      pageId: page.id,
-      title: parseNotionTitle(titleProp),
-      status: parseNotionStatus(statusProp),
-      dueDate: parseNotionDate(dueDateProp),
-      priority: parseNotionStatus(priorityProp) || undefined,
-      url: page.url,
-      createdAt: page.created_time,
-      lastEdited: page.last_edited_time,
-    }
-  })
+      return {
+        pageId: page.id,
+        title: parseNotionTitle(titleProp),
+        status: parseNotionStatus(statusProp),
+        dueDate: parseNotionDate(dueDateProp),
+        priority: parseNotionStatus(priorityProp) || undefined,
+        url: page.url,
+        createdAt: page.created_time,
+        lastEdited: page.last_edited_time,
+      }
+    })
+    .filter(task => {
+      const s = task.status.toLowerCase()
+      // Skip EOD reports entirely
+      if (task.title.toLowerCase().includes('eod report')) return false
+      // Only include active tasks
+      return ACTIVE_STATUSES.some(active => s.includes(active))
+    })
 }
 
 export async function createNotionTask(
