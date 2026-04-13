@@ -841,6 +841,9 @@ export function HogwartsShell() {
   const [briefDone, setBriefDone]       = useState(false)
   const briefScrollRef = useRef<HTMLDivElement>(null)
 
+  // ── QC state ─────────────────────────────────────────────────────────────
+  const [qcPostComment, setQcPostComment] = useState(false)
+
   // ── UI state ────────────────────────────────────────────────────────────
   const [activeTool, setActiveTool]     = useState('office')
   const [activeBotTab, setActiveBotTab] = useState('environment')
@@ -1024,6 +1027,36 @@ export function HogwartsShell() {
     if (question.trim().toLowerCase() === '/brief') {
       setQuestion('')
       runBrief()
+      return
+    }
+
+    // ── /qc <frame.io url> command ────────────────────────────────────────
+    const qcMatch = question.trim().match(/^\/qc\s+(https?:\/\/\S+)/i)
+    if (qcMatch) {
+      const frameUrl = qcMatch[1]
+      setLoading(true); setChatError(''); setAnswer(''); setRespondingAgent(''); setActiveAgent(null)
+      setBriefActive(false)
+      setQuestion('')
+      pushLog(`HARRY: Running QC on Frame.io asset…`, 'chat')
+      try {
+        const res  = await fetch('/api/qc', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: frameUrl, postComment: qcPostComment }),
+        })
+        const data = await res.json()
+        if (data.error) {
+          setChatError(data.error)
+        } else {
+          setAnswer(data.answer)
+          setRespondingAgent('HARRY')
+          setRespondingColor('red')
+          setRespondingAvatar(AGENTS_DEF.find(a => a.name === 'HARRY')?.avatar ?? '')
+          setResponseId(p => p + 1)
+          pushLog(`HARRY: QC report ready — "${data.assetName ?? 'asset'}"`, 'chat')
+        }
+      } catch (err) { setChatError(String(err)) }
+      finally { setLoading(false) }
       return
     }
 
@@ -1315,8 +1348,8 @@ export function HogwartsShell() {
                     <Image src="/agents/Hogwarts_Cyborg.png" alt="Hogwarts" width={40} height={40}
                       className="rounded-xl object-cover object-top opacity-40" />
                     <p className="text-xs text-gray-600 leading-relaxed">
-                      Ask a question or type <span className="text-purple-500 font-mono">/brief</span><br />
-                      to run the full team briefing.
+                      Ask a question or type <span className="text-purple-500 font-mono">/brief</span> for the team briefing.<br />
+                      Paste a Frame.io link with <span className="text-red-400 font-mono">/qc</span> for video QC.
                     </p>
                   </div>
                 )}
@@ -1382,23 +1415,42 @@ export function HogwartsShell() {
               </div>
 
               {/* Chat input */}
-              <div className="flex-shrink-0 flex gap-2">
-                <input
-                  id="hw-input"
-                  type="text"
-                  value={question}
-                  onChange={e => { setQuestion(e.target.value); if (!e.target.value.startsWith('@')) setActiveAgent(null) }}
-                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask() } }}
-                  placeholder="@mention an agent, ask anything, or /brief…"
-                  className="flex-1 bg-[#07080e] border border-[#1e2030] rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-700 focus:outline-none focus:border-purple-700/60 transition-colors"
-                />
-                <button
-                  onClick={ask}
-                  disabled={!question.trim() || loading}
-                  className="flex-shrink-0 bg-purple-800/80 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg px-3 py-2 transition-colors"
-                >
-                  {loading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                </button>
+              <div className="flex-shrink-0 space-y-1.5">
+                {/* /qc mode hint + post-comment toggle — shown when user types /qc */}
+                {question.trim().toLowerCase().startsWith('/qc') && (
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-[10px] text-red-400 font-mono">
+                      /qc — paste Frame.io URL after the command
+                    </span>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <div
+                        onClick={() => setQcPostComment(p => !p)}
+                        className={`w-7 h-4 rounded-full transition-colors relative ${qcPostComment ? 'bg-red-600' : 'bg-[#1e2030]'}`}
+                      >
+                        <span className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform ${qcPostComment ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                      </div>
+                      <span className="text-[10px] text-gray-500">Post to Frame.io</span>
+                    </label>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <input
+                    id="hw-input"
+                    type="text"
+                    value={question}
+                    onChange={e => { setQuestion(e.target.value); if (!e.target.value.startsWith('@')) setActiveAgent(null) }}
+                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask() } }}
+                    placeholder="@mention, ask anything, /brief, or /qc <frame.io url>…"
+                    className="flex-1 bg-[#07080e] border border-[#1e2030] rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-700 focus:outline-none focus:border-purple-700/60 transition-colors"
+                  />
+                  <button
+                    onClick={ask}
+                    disabled={!question.trim() || loading}
+                    className="flex-shrink-0 bg-purple-800/80 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg px-3 py-2 transition-colors"
+                  >
+                    {loading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                  </button>
+                </div>
               </div>
             </div>
           </main>
