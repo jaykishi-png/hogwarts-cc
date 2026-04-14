@@ -9,6 +9,7 @@ import {
   Clapperboard, ChevronRight, ExternalLink, RefreshCw, Terminal,
   Cpu, Database, Bell, Palette, SlidersHorizontal, BookOpen,
   CheckCircle2, XCircle, Clock, BarChart2, Paperclip, Link2, X as XIcon, Plus,
+  Wand2, Sparkles, Tag, Trash2,
 } from 'lucide-react'
 import { NavTabs } from './NavTabs'
 import VideoQCProcessor from './VideoQCProcessor'
@@ -20,6 +21,8 @@ import { PanelErrorBoundary } from './hogwarts/PanelErrorBoundary'
 import { Furniture } from './hogwarts/PixelFurniture'
 import { CommandPalette } from './hogwarts/CommandPalette'
 import { NotificationFeed } from './hogwarts/NotificationFeed'
+import { GFXGeneratorPanel } from './hogwarts/GFXGeneratorPanel'
+import { ProductNamePanel } from './hogwarts/ProductNamePanel'
 import {
   AGENTS_DEF, COLOR_MAP, RING_MAP, TEXT_MAP, BADGE_MAP, ROOMS, GLOW,
   CHARACTER_MAP, DESK_POS, MEETING_POS, BRIEF_SEQUENCE, INITIAL_AGENTS,
@@ -81,6 +84,8 @@ function LeftToolbar({ active, setActive }: { active: string; setActive: (k: str
     { key: 'chat',      icon: MessageSquare, label: 'Chat' },
     { key: 'qc',        icon: Clapperboard,  label: 'Video QC' },
     { key: 'knowledge', icon: BookOpen,      label: 'Knowledge Base' },
+    { key: 'gfx',      icon: Sparkles,      label: 'GFX Generator' },
+    { key: 'product',  icon: Tag,           label: 'Product Names' },
     null,
     { key: 'env',      icon: Globe,         label: 'Environment' },
     { key: 'layout',   icon: Layers,        label: 'Layout' },
@@ -274,6 +279,7 @@ export function HogwartsShell() {
   const [responseId, setResponseId]           = useState(0)
   const [attachments, setAttachments]         = useState<{dataUrl: string; name: string; type: string}[]>([])
   const attachInputRef = useRef<HTMLInputElement>(null)
+  const textareaRef    = useRef<HTMLTextAreaElement>(null)
 
   // ── Brief state ─────────────────────────────────────────────────────────
   const [briefActive, setBriefActive]   = useState(false)
@@ -289,6 +295,12 @@ export function HogwartsShell() {
 
   // ── Command palette state ────────────────────────────────────────────────
   const [paletteOpen, setPaletteOpen] = useState(false)
+
+  // ── Prompt Builder state ─────────────────────────────────────────────────
+  const [promptBuilderOpen, setPromptBuilderOpen]       = useState(false)
+  const [promptBuilderInput, setPromptBuilderInput]     = useState('')
+  const [promptBuilderResult, setPromptBuilderResult]   = useState('')
+  const [promptBuilderLoading, setPromptBuilderLoading] = useState(false)
 
   // ── Toolbar order state ──────────────────────────────────────────────────
   const DEFAULT_TOOL_ORDER = ['office', 'agents', 'chat', 'qc', 'knowledge', 'env', 'layout', 'activity', 'notifications', 'settings']
@@ -343,6 +355,14 @@ export function HogwartsShell() {
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
   }, [])
+
+  // ── Auto-resize textarea ─────────────────────────────────────────────────
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+  }, [question])
 
   // ── Office helpers ───────────────────────────────────────────────────────
   function pushLog(msg: string, type: LogEntry['type']) {
@@ -506,7 +526,7 @@ export function HogwartsShell() {
   function mentionAgent(name: string) {
     setQuestion(`@${name.toLowerCase()} `)
     setActiveAgent(name)
-    setTimeout(() => { const el = document.getElementById('hw-input'); if (el) (el as HTMLInputElement).focus() }, 50)
+    setTimeout(() => { const el = document.getElementById('hw-input'); if (el) (el as HTMLTextAreaElement).focus() }, 50)
   }
 
   function newConversation() {
@@ -523,6 +543,19 @@ export function HogwartsShell() {
     setChatError('')
     setShowHistory(false)
     setBriefActive(false)
+  }
+
+  function deleteConversation(id: string) {
+    setConversations(prev => {
+      const updated = prev.filter(c => c.id !== id)
+      saveConversations(updated)
+      return updated
+    })
+    if (currentConvoId === id) {
+      setMessages([])
+      setCurrentConvoId('')
+      setChatError('')
+    }
   }
 
   async function ask() {
@@ -654,6 +687,27 @@ export function HogwartsShell() {
     }
   }
 
+  // ── Prompt Builder ───────────────────────────────────────────────────────
+  async function buildPrompt() {
+    const raw = promptBuilderInput.trim()
+    if (!raw || promptBuilderLoading) return
+    setPromptBuilderLoading(true)
+    setPromptBuilderResult('')
+    try {
+      const res = await fetch('/api/agents/expand-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rawPrompt: raw }),
+      })
+      const data = await res.json()
+      setPromptBuilderResult(data.expandedPrompt ?? data.error ?? 'No result')
+    } catch (err) {
+      setPromptBuilderResult(String(err))
+    } finally {
+      setPromptBuilderLoading(false)
+    }
+  }
+
   const onlineCount    = agents.filter(a => a.status !== 'away').length
   const inMeetingCount = agents.filter(a => a.currentRoom === 'great-hall').length
 
@@ -716,6 +770,20 @@ export function HogwartsShell() {
               </PanelErrorBoundary>
             )}
 
+            {/* ── GFX Generator Panel ────────────────────────────────────────── */}
+            {activeTool === 'gfx' && (
+              <PanelErrorBoundary panelName="GFX Generator">
+                <GFXGeneratorPanel pushLog={pushLog} />
+              </PanelErrorBoundary>
+            )}
+
+            {/* ── Product Name Panel ─────────────────────────────────────────── */}
+            {activeTool === 'product' && (
+              <PanelErrorBoundary panelName="Product Names">
+                <ProductNamePanel pushLog={pushLog} />
+              </PanelErrorBoundary>
+            )}
+
             {/* ── Full Chat Panel ───────────────────────────────────────────── */}
             {activeTool === 'chat' && (
               <PanelErrorBoundary panelName="Chat">
@@ -766,21 +834,28 @@ export function HogwartsShell() {
                           <p className="text-[11px] text-gray-600 text-center">No conversations yet.<br />Ask a question to get started.</p>
                         </div>
                       ) : conversations.map(convo => (
-                        <button
+                        <div
                           key={convo.id}
-                          onClick={() => loadConversation(convo)}
-                          className={`w-full text-left p-2.5 rounded-lg border transition-all ${
+                          className={`group relative w-full text-left p-2.5 rounded-lg border transition-all cursor-pointer ${
                             convo.id === currentConvoId
                               ? 'border-purple-700/50 bg-purple-900/15'
                               : 'border-[#1e2030] bg-transparent hover:border-[#2a2d3a] hover:bg-[#0a0c14]'
                           }`}
+                          onClick={() => loadConversation(convo)}
                         >
-                          <p className="text-[11px] text-gray-200 truncate">{convo.title}</p>
+                          <p className="text-[11px] text-gray-200 truncate pr-5">{convo.title}</p>
                           <div className="flex items-center justify-between mt-0.5">
                             <p className="text-[9px] text-gray-600">{format(new Date(convo.updatedAt), 'MMM d · h:mm a')}</p>
                             <p className="text-[9px] text-gray-700">{convo.messages.length} msgs</p>
                           </div>
-                        </button>
+                          <button
+                            onClick={e => { e.stopPropagation(); deleteConversation(convo.id) }}
+                            title="Delete conversation"
+                            className="absolute top-1.5 right-1.5 w-5 h-5 flex items-center justify-center rounded text-gray-700 hover:text-red-400 hover:bg-red-900/30 transition-all opacity-0 group-hover:opacity-100"
+                          >
+                            <Trash2 size={10} />
+                          </button>
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -965,14 +1040,21 @@ export function HogwartsShell() {
                         }}
                       />
                       <button
+                        onClick={() => { setPromptBuilderOpen(true); setPromptBuilderResult(''); setPromptBuilderInput('') }}
+                        className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-xl bg-[#0d0f1a] border border-[#1e2030] text-gray-600 hover:text-purple-400 hover:border-purple-800/40 transition-all"
+                        title="Build / expand a prompt"
+                      >
+                        <Wand2 size={16} />
+                      </button>
+                      <button
                         onClick={() => attachInputRef.current?.click()}
                         className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-xl bg-[#0d0f1a] border border-[#1e2030] text-gray-600 hover:text-gray-300 hover:border-[#2a2d3a] transition-all"
                         title="Attach file"
                       >
                         <Paperclip size={16} />
                       </button>
-                      <input
-                        type="text"
+                      <textarea
+                        rows={1}
                         value={question}
                         onChange={e => { setQuestion(e.target.value); if (!e.target.value.startsWith('@')) setActiveAgent(null) }}
                         onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask() } }}
@@ -991,7 +1073,8 @@ export function HogwartsShell() {
                           }
                         }}
                         placeholder="@mention an agent, ask anything, paste an image…"
-                        className="flex-1 bg-[#07080e] border border-[#1e2030] rounded-xl px-4 py-2.5 text-sm text-gray-200 placeholder-gray-700 focus:outline-none focus:border-purple-700/60 transition-colors"
+                        className="flex-1 bg-[#07080e] border border-[#1e2030] rounded-xl px-4 py-2.5 text-sm text-gray-200 placeholder-gray-700 focus:outline-none focus:border-purple-700/60 transition-colors resize-none overflow-hidden leading-relaxed"
+                        style={{ minHeight: 40 }}
                       />
                       <button
                         onClick={ask}
@@ -1265,7 +1348,7 @@ export function HogwartsShell() {
 
             {/* ── Floor plan ────────────────────────────────────────────────── */}
             <div
-              className={`flex-1 min-w-0 relative rounded-xl overflow-hidden border-2 border-[#1a0e06] ${['qc','agents','activity','env','layout','settings','chat'].includes(activeTool) ? 'hidden' : ''}`}
+              className={`flex-1 min-w-0 relative rounded-xl overflow-hidden border-2 border-[#1a0e06] ${['qc','agents','activity','env','layout','settings','chat','knowledge','gfx','product'].includes(activeTool) ? 'hidden' : ''}`}
               style={{
                 background: '#8b5c30',
                 backgroundImage: [
@@ -1707,15 +1790,23 @@ export function HogwartsShell() {
                     }}
                   />
                   <button
+                    onClick={() => { setPromptBuilderOpen(true); setPromptBuilderResult(''); setPromptBuilderInput('') }}
+                    className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-lg bg-[#0d0f1a] border border-[#1e2030] text-gray-600 hover:text-purple-400 hover:border-purple-800/40 transition-all"
+                    title="Build / expand a prompt"
+                  >
+                    <Wand2 size={14} />
+                  </button>
+                  <button
                     onClick={() => attachInputRef.current?.click()}
                     className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-lg bg-[#0d0f1a] border border-[#1e2030] text-gray-600 hover:text-gray-300 hover:border-[#2a2d3a] transition-all"
                     title="Attach image or file"
                   >
                     <Paperclip size={14} />
                   </button>
-                  <input
+                  <textarea
+                    ref={textareaRef}
                     id="hw-input"
-                    type="text"
+                    rows={1}
                     value={question}
                     onChange={e => { setQuestion(e.target.value); if (!e.target.value.startsWith('@')) setActiveAgent(null) }}
                     onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask() } }}
@@ -1734,7 +1825,8 @@ export function HogwartsShell() {
                       }
                     }}
                     placeholder="@mention, ask anything, paste an image, /brief, /qc, /rr…"
-                    className="flex-1 bg-[#07080e] border border-[#1e2030] rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-700 focus:outline-none focus:border-purple-700/60 transition-colors"
+                    className="flex-1 bg-[#07080e] border border-[#1e2030] rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-700 focus:outline-none focus:border-purple-700/60 transition-colors resize-none overflow-hidden leading-relaxed"
+                    style={{ minHeight: 40 }}
                   />
                   <button
                     onClick={ask}
@@ -1771,6 +1863,62 @@ export function HogwartsShell() {
         onMentionAgent={mentionAgent}
         onNewConversation={newConversation}
       />
+
+      {/* ── Prompt Builder modal ─────────────────────────────────────────────── */}
+      {promptBuilderOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) setPromptBuilderOpen(false) }}>
+          <div className="w-full max-w-2xl mx-4 bg-[#0d0f1a] border border-[#2a2d3a] rounded-2xl shadow-2xl flex flex-col gap-0 overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[#1e2030]">
+              <div className="flex items-center gap-2">
+                <Wand2 size={16} className="text-purple-400" />
+                <span className="text-sm font-semibold text-gray-200">Prompt Builder</span>
+                <span className="text-[10px] text-gray-600 bg-[#1e2030] rounded px-1.5 py-0.5">Meta-prompt engine</span>
+              </div>
+              <button onClick={() => setPromptBuilderOpen(false)} className="text-gray-600 hover:text-gray-300 transition-colors">
+                <XIcon size={16} />
+              </button>
+            </div>
+            {/* Body */}
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="text-[11px] text-gray-500 uppercase tracking-wider mb-1.5 block">Your rough idea</label>
+                <textarea
+                  autoFocus
+                  value={promptBuilderInput}
+                  onChange={e => setPromptBuilderInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) buildPrompt() }}
+                  placeholder="e.g. write me a prompt that reviews video edits for quality…"
+                  rows={3}
+                  className="w-full bg-[#07080e] border border-[#1e2030] rounded-xl px-4 py-3 text-sm text-gray-200 placeholder-gray-700 focus:outline-none focus:border-purple-700/60 transition-colors resize-none"
+                />
+                <p className="text-[10px] text-gray-700 mt-1">⌘ + Enter to build</p>
+              </div>
+              <button
+                onClick={buildPrompt}
+                disabled={!promptBuilderInput.trim() || promptBuilderLoading}
+                className="w-full flex items-center justify-center gap-2 bg-purple-800/80 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl px-4 py-2.5 text-sm font-medium transition-colors"
+              >
+                {promptBuilderLoading ? <><Loader2 size={15} className="animate-spin" /> Building…</> : <><Wand2 size={15} /> Build Perfect Prompt</>}
+              </button>
+              {promptBuilderResult && (
+                <div className="space-y-2">
+                  <label className="text-[11px] text-gray-500 uppercase tracking-wider block">Expanded prompt</label>
+                  <div className="bg-[#07080e] border border-purple-800/30 rounded-xl px-4 py-3 text-sm text-gray-300 leading-relaxed whitespace-pre-wrap max-h-64 overflow-y-auto [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-thumb]:bg-[#2a2d3a] [&::-webkit-scrollbar-thumb]:rounded-full">
+                    {promptBuilderResult}
+                  </div>
+                  <button
+                    onClick={() => { setQuestion(promptBuilderResult); setPromptBuilderOpen(false) }}
+                    className="w-full flex items-center justify-center gap-2 bg-[#1e2030] hover:bg-[#2a2d3a] border border-[#2a2d3a] text-gray-200 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors"
+                  >
+                    <Send size={14} /> Use this prompt
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

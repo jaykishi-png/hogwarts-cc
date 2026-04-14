@@ -88,17 +88,111 @@ async function getMondayContext(): Promise<string> {
   }
 }
 
+async function getGmailContext(): Promise<string> {
+  try {
+    const refreshToken = process.env.GOOGLE_REFRESH_TOKEN
+    if (!refreshToken) return ''
+
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id:     process.env.GOOGLE_CLIENT_ID ?? '',
+        client_secret: process.env.GOOGLE_CLIENT_SECRET ?? '',
+        refresh_token: refreshToken,
+        grant_type:    'refresh_token',
+      }),
+    })
+    const tokenData = await tokenRes.json() as { access_token?: string }
+    const accessToken = tokenData.access_token
+    if (!accessToken) return ''
+
+    const searchRes = await fetch(
+      'https://gmail.googleapis.com/gmail/v1/users/me/messages?q=is:unread&maxResults=10',
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    )
+    const searchData = await searchRes.json() as { messages?: { id: string }[] }
+    const messages = searchData.messages ?? []
+    if (messages.length === 0) return 'No unread Gmail messages.'
+
+    const summaries: string[] = []
+    for (const msg of messages.slice(0, 6)) {
+      try {
+        const msgRes = await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        )
+        const msgData = await msgRes.json() as { payload?: { headers?: { name: string; value: string }[] } }
+        const headers = msgData.payload?.headers ?? []
+        const subject = headers.find(h => h.name === 'Subject')?.value ?? '(no subject)'
+        const from = headers.find(h => h.name === 'From')?.value ?? 'Unknown'
+        summaries.push(`- From: ${from.slice(0, 50)} | Subject: ${subject.slice(0, 80)}`)
+      } catch { /* skip */ }
+    }
+
+    return `Unread Gmail (${messages.length} total, showing ${summaries.length}):\n${summaries.join('\n')}`
+  } catch {
+    return ''
+  }
+}
+
+async function getNotionContext(): Promise<string> {
+  try {
+    const notionToken = process.env.NOTION_TOKEN
+    if (!notionToken) return ''
+
+    const res = await fetch('https://api.notion.com/v1/search', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${notionToken}`,
+        'Notion-Version': '2022-06-28',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        filter: { value: 'page', property: 'object' },
+        sort: { direction: 'descending', timestamp: 'last_edited_time' },
+        page_size: 8,
+      }),
+    })
+    const data = await res.json() as { results?: Array<{ properties?: Record<string, { title?: Array<{ plain_text: string }> }>; last_edited_time?: string }> }
+    const pages = data.results ?? []
+    if (pages.length === 0) return 'No recent Notion pages.'
+
+    const lines = pages.map(p => {
+      const titleProp = Object.values(p.properties ?? {}).find(v => v.title)
+      const title = titleProp?.title?.[0]?.plain_text ?? 'Untitled'
+      const edited = p.last_edited_time ? new Date(p.last_edited_time).toLocaleDateString() : ''
+      return `- ${title}${edited ? ` (edited ${edited})` : ''}`
+    })
+    return `Recently edited Notion pages:\n${lines.join('\n')}`
+  } catch {
+    return ''
+  }
+}
+
 // ─── Agent profiles ───────────────────────────────────────────────────────────
 
 const AGENTS: Record<string, { name: string; model: string; system: string; color: string }> = {
   DUMBLEDORE: {
     name: 'DUMBLEDORE', model: 'gpt-4o-mini', color: 'purple',
-    system: `You are DUMBLEDORE, Chief of Staff AI for Jay Kishi, a content manager overseeing two brands:
-- Revenue Rush: e-learning platform for e-commerce business owners
-- The Process: clean supplement company
+    system: `You are DUMBLEDORE, Chief of Staff AI and Orchestrator for Jay Kishi's content agency.
+Jay runs two brands: Revenue Rush (e-commerce e-learning) and The Process (supplements).
 Jay's team: video editors, motion graphics artists, graphic designers, web developers.
-Jay's tools: Notion, Monday.com, Slack, Google Drive, Google Calendar, Gmail, Discord.
-You help Jay think through decisions, prioritize, plan his day, manage communications, and coordinate operations. Be concise and operator-focused.`,
+Tools in use: Notion, Monday.com, Slack, Google Drive, Google Calendar, Gmail, Frame.io.
+
+Your role is ORCHESTRATION, not execution. When you receive a message:
+1. If it's a strategy/planning/synthesis question YOU should answer — do so directly.
+2. For everything else, respond with: "→ Routing to [AGENT_NAME]: [one sentence on why]" then answer as that agent would, using their name and expertise.
+
+Specialist agents you can invoke:
+- HERMIONE: production status, Monday.com, timelines, blockers, team workload
+- HARRY: creative review, feedback on video/design/motion assets
+- RON: campaign ideas, content strategy, creative briefs, brainstorming
+- McGONAGALL: SOPs, workflows, process docs, operational structure
+- SNAPE: AI tools, technology scouting, innovation
+- HAGRID: team management, 1:1 prep, people issues, HR
+
+Only answer directly yourself for: day planning, meeting prep, executive decisions, synthesis across multiple domains, or when directly @-mentioned.`,
   },
   HERMIONE: {
     name: 'HERMIONE', model: 'gpt-4o-mini', color: 'amber',
@@ -131,15 +225,18 @@ You help Jay think through decisions, prioritize, plan his day, manage communica
 const ROUTER_SYSTEM = `You are a routing agent. Given a user's message, decide which AI agent should handle it.
 
 Agents:
-- DUMBLEDORE: day planning, priorities, scheduling, communications, general questions, strategy, decisions
+- DUMBLEDORE: executive decisions, day planning, cross-domain synthesis, prioritization, "what should I focus on" questions
 - HERMIONE: production status, Monday.com, project tracking, timelines, blockers, overdue items, team workload
 - HARRY: creative review, feedback on video/design/motion/web assets, brief review, brand alignment
-- RON: campaign ideas, brainstorming, content strategy, creative briefs, marketing angles
+- RON: campaign ideas, brainstorming, content strategy, creative briefs, marketing angles, product names
 - McGONAGALL: SOPs, workflows, process documentation, how-to guides, operational structure
-- SNAPE: AI tools, AI news, technology scouting, tool evaluation, innovation
+- SNAPE: AI tools, AI news, technology scouting, tool evaluation, innovation, prompt engineering
 - HAGRID: team management, 1:1 prep, employee feedback, people issues, team health, HR
 
-Reply with ONLY the agent name in uppercase. Nothing else. Example: HERMIONE`
+Route to DUMBLEDORE ONLY for: "what should I do today", "prioritize my day", "help me decide", synthesis questions, or truly ambiguous questions.
+For specific domain questions (even if phrased generally), route to the specialist.
+
+Reply with ONLY the agent name in uppercase. Example: HERMIONE`
 
 async function routeToAgent(question: string, context?: string): Promise<string> {
   try {
@@ -248,6 +345,64 @@ export async function POST(req: NextRequest) {
     return handleRRQuery(rrQuery, useStream)
   }
 
+  // /mp command — meta-prompt builder
+  if ((question ?? '').trim().toLowerCase().startsWith('/mp ')) {
+    const mpQuery = (question ?? '').trim().slice(4).trim()
+    // Force route to SNAPE with meta-prompt system
+    const metaAgent = {
+      name: 'SNAPE', model: 'gpt-4o', color: 'slate',
+      system: `You are a world-class prompt engineer. Given a rough prompt idea, rewrite it as a PERFECT, detailed prompt that will get the best results from an AI. Structure your output as:
+
+**ROLE:** [Who the AI should be]
+**CONTEXT:** [Relevant background]
+**TASK:** [Exactly what to do, step by step]
+**FORMAT:** [How to structure the output]
+**CONSTRAINTS:** [What to avoid or limit]
+**EXAMPLE OUTPUT:** [Optional: a brief example of what a good response looks like]
+
+Be specific, actionable, and thorough. The prompt should be immediately usable.`,
+    }
+    const openai = client()
+
+    if (useStream) {
+      const streamRes = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        max_tokens: 1500,
+        stream: true,
+        messages: [
+          { role: 'system', content: metaAgent.system },
+          { role: 'user', content: `Turn this rough idea into a perfect prompt:\n\n${mpQuery}` },
+        ],
+      })
+      const encoder = new TextEncoder()
+      const readable = new ReadableStream({
+        async start(controller) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'agent', agent: 'SNAPE', color: 'slate' })}\n\n`))
+          try {
+            for await (const chunk of streamRes) {
+              const delta = chunk.choices[0]?.delta?.content ?? ''
+              if (delta) controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'delta', content: delta })}\n\n`))
+            }
+          } finally {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`))
+            controller.close()
+          }
+        },
+      })
+      return new Response(readable, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' } })
+    }
+
+    const res = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      max_tokens: 1500,
+      messages: [
+        { role: 'system', content: metaAgent.system },
+        { role: 'user', content: `Turn this rough idea into a perfect prompt:\n\n${mpQuery}` },
+      ],
+    })
+    return NextResponse.json({ answer: res.choices[0]?.message?.content ?? 'No response', agent: 'SNAPE', color: 'slate' })
+  }
+
   try {
     const { agent: mentionedAgent, cleanQuestion } = parseMention(question ?? '')
     const agentKey = mentionedAgent ?? await routeToAgent(question ?? 'Analyze the attached image(s)', context)
@@ -268,13 +423,24 @@ export async function POST(req: NextRequest) {
     // Inject live data for specific agents
     let liveDataContext = ''
     if (agentKey === 'HERMIONE') {
-      liveDataContext = await withTimeout(getMondayContext(), 4000, '')
+      const [mondayCtx, notionCtx] = await Promise.all([
+        withTimeout(getMondayContext(), 4000, ''),
+        withTimeout(getNotionContext(), 4000, ''),
+      ])
+      liveDataContext = [mondayCtx, notionCtx].filter(Boolean).join('\n\n')
     } else if (agentKey === 'DUMBLEDORE') {
-      const [calCtx, slackCtx] = await Promise.all([
+      const [calCtx, slackCtx, gmailCtx] = await Promise.all([
         withTimeout(getCalendarContext(), 4000, ''),
         withTimeout(getSlackContext(), 4000, ''),
+        withTimeout(getGmailContext(), 4000, ''),
       ])
-      liveDataContext = [calCtx, slackCtx].filter(Boolean).join('\n\n')
+      liveDataContext = [calCtx, slackCtx, gmailCtx].filter(Boolean).join('\n\n')
+    } else if (agentKey === 'HAGRID') {
+      const slackCtx = await withTimeout(getSlackContext(), 4000, '')
+      liveDataContext = slackCtx
+    } else if (agentKey === 'RON') {
+      const notionCtx = await withTimeout(getNotionContext(), 4000, '')
+      liveDataContext = notionCtx
     }
 
     // Build system prompt with optional live data AND memory context

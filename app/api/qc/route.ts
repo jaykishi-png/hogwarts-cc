@@ -231,17 +231,23 @@ export async function POST(req: NextRequest) {
       const parts: VisionPart[] = [
         {
           type: 'text',
-          text: `You are a senior video editor performing quality control. You are analyzing ${frameUrls.length} frame(s) from a production video.
+          text: `You are a senior video editor and quality control specialist. Analyze the ${frameUrls.length} frame(s) provided from a production video.
 
-For EACH frame, evaluate:
-1. **On-screen text / titles / lower thirds** — typos, wrong fonts, misalignment, readability
-2. **Exposure** — overexposed, underexposed, crushed blacks, blown highlights
-3. **Framing & composition** — cut-off subjects, rule-of-thirds, tilted horizon
-4. **Color grading** — unnatural skin tones, inconsistent color, color cast
-5. **Visual artifacts** — compression blocks, moire, noise, motion blur
-6. **Safe zones** — titles or subjects too close to frame edge
+For each frame (label them Frame 1, Frame 2, etc.):
 
-Status for each: PASS ✅, ISSUE ⚠️, or N/A. If frames differ, note the inconsistency. Be specific.`,
+**1. JUMP CUT DETECTION** — Compare consecutive frames. Flag if: subject position changes abruptly, background is inconsistent, lighting changes suddenly, subject appearance changes (different outfit/hair). These indicate a jump cut.
+
+**2. ON-SCREEN TEXT** — Typos, wrong fonts, misalignment, readability issues, text too close to frame edge (safe zones). Be precise about what text is visible.
+
+**3. EXPOSURE & LIGHTING** — Overexposed highlights, crushed blacks, inconsistent lighting between frames (suggests different shooting conditions), color temperature mismatch.
+
+**4. MISSING GRAPHICS** — Places where a lower-third, title card, or call-out would be expected but is absent (e.g., speaker introduction with no lower-third).
+
+**5. COMPOSITION** — Cut-off subjects, awkward headroom, tilted horizon, subject not in rule-of-thirds.
+
+**6. COLOR GRADING** — Unnatural skin tones, color cast, inconsistency across frames.
+
+Use: PASS ✅, ISSUE ⚠️ [specific description], or N/A for each check. Be specific and actionable.`,
         },
         ...frameUrls.slice(0, 4).map((url): VisionPart => ({
           type: 'image_url',
@@ -264,16 +270,21 @@ Status for each: PASS ✅, ISSUE ⚠️, or N/A. If frames differ, note the inco
         model: 'gpt-4o',
         messages: [{
           role: 'user',
-          content: `You are a senior video editor checking a transcript for audio and dialogue quality issues.
+          content: `You are a senior video editor checking audio and dialogue quality. Analyze this transcript carefully.
 
-Check for:
-1. **Filler words** — um, uh, like, you know, basically (flag if > 5 occurrences)
-2. **Repeated phrases** — exact sentences appearing twice (possible edit loop)
-3. **Abrupt cut-offs** — sentences ending mid-word or trailing off unnaturally
-4. **Inaudible / missing audio** — [inaudible], [silence], [crosstalk] markers
-5. **Content errors** — wrong names, garbled numbers, factual slips
+**1. DIALOGUE CUT-OFF** — Sentences or words cut off mid-phrase. Look for: words that end abruptly, incomplete thoughts, missing sentence endings. These are editing mistakes where audio was cut too early.
 
-For each: PASS ✅, ISSUE ⚠️, or N/A. Include relevant snippets for any issues.
+**2. LINES TOO CLOSE** — Two consecutive lines with very short gap (< 0.5s implied by abrupt transitions with no breathing room). Flag if a speaker seems to be talking over themselves or edits feel rushed.
+
+**3. FILLER WORDS** — Flag if um/uh/like/you know appear more than 5 times total (possible editing oversight).
+
+**4. REPEATED CONTENT** — Exact or near-exact sentences appearing twice (edit loop / duplicate clip).
+
+**5. INAUDIBLE MARKERS** — [inaudible], [crosstalk], [music], [silence] markers that indicate audio problems.
+
+**6. CONTENT ERRORS** — Wrong names, garbled numbers, obvious factual slips.
+
+For each: PASS ✅, ISSUE ⚠️ [quote the problematic line], or N/A.
 
 Transcript:
 ${transcript.slice(0, 4000)}`,
