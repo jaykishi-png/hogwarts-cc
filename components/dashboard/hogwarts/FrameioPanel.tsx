@@ -214,16 +214,40 @@ interface ErrorBlockProps {
 }
 
 function ErrorBlock({ message, onRetry }: ErrorBlockProps) {
+  const isSetup   = message.includes('not configured') || message.includes('setup')
+  const is401     = message.includes('401') || message.includes('Unauthorized')
+  const isSetupIssue = isSetup || is401
+
   return (
-    <div className="flex flex-col items-center gap-3 rounded-xl border border-red-900/40 bg-red-900/10 px-6 py-8 text-center">
-      <AlertTriangle size={28} className="text-red-400" />
+    <div className={`flex flex-col items-center gap-3 rounded-xl border px-6 py-8 text-center ${
+      isSetupIssue ? 'border-amber-800/40 bg-amber-900/10' : 'border-red-900/40 bg-red-900/10'
+    }`}>
+      <AlertTriangle size={28} className={isSetupIssue ? 'text-amber-400' : 'text-red-400'} />
       <div>
-        <p className="text-sm font-medium text-red-300">Could not load Frame.io data</p>
-        <p className="mt-1 text-xs text-red-400/70 max-w-xs mx-auto">{message}</p>
+        <p className={`text-sm font-medium ${isSetupIssue ? 'text-amber-300' : 'text-red-300'}`}>
+          {isSetupIssue ? 'Frame.io token needed' : 'Could not load Frame.io data'}
+        </p>
+        {isSetupIssue ? (
+          <div className="mt-2 text-left space-y-2 max-w-xs mx-auto">
+            <p className="text-xs text-amber-400/80">To connect Frame.io:</p>
+            <ol className="text-xs text-amber-500/70 space-y-1 list-decimal list-inside">
+              <li>Go to <span className="font-mono text-amber-400">frameio.com → Account → Developer</span></li>
+              <li>Create a <strong className="text-amber-300">Developer Token</strong> (starts with <span className="font-mono">fio-u-</span>)</li>
+              <li>Add it to Vercel as <span className="font-mono text-amber-300">FRAMEIO_TOKEN</span></li>
+              <li>Redeploy on Vercel</li>
+            </ol>
+          </div>
+        ) : (
+          <p className="mt-1 text-xs text-red-400/70 max-w-xs mx-auto">{message}</p>
+        )}
       </div>
       <button
         onClick={onRetry}
-        className="mt-1 rounded-lg border border-red-800/50 bg-red-900/30 px-4 py-1.5 text-xs text-red-300 hover:bg-red-900/50 transition-colors"
+        className={`mt-1 rounded-lg border px-4 py-1.5 text-xs transition-colors ${
+          isSetupIssue
+            ? 'border-amber-800/50 bg-amber-900/30 text-amber-300 hover:bg-amber-900/50'
+            : 'border-red-800/50 bg-red-900/30 text-red-300 hover:bg-red-900/50'
+        }`}
       >
         Try Again
       </button>
