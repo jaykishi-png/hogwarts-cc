@@ -779,31 +779,31 @@ Stay calm. Be decisive. Give Jay one clear move at a time.`,
 
 const ROUTER_SYSTEM = `You are a routing agent for a content agency AI system. Given a user message, reply with ONLY the agent name in uppercase that should handle it.
 
-ROUTING RULES (use first match):
-- KINGSLEY → urgent, crisis, emergency, something is broken or on fire
-- HARRY → review this video/design/thumbnail/motion asset, give feedback on creative
-- FRED → write a hook, viral concept, YouTube video idea, TikTok script, retention
-- RON → campaign idea, content brief, marketing strategy, brainstorm content angles
-- GINNY → social media, Reels, TikTok, Instagram growth, short-form platform strategy
-- LUNA → GFX brief, motion graphics, animation, visual effects for video
-- FLEUR → product name, tagline, ad copy, landing page copy, YouTube title, email subject
-- SIRIUS → brand strategy, brand voice, positioning, brand audit, identity
-- TRELAWNEY → trends, forecasting, algorithm changes, what's coming, cultural moments
-- GEORGE → A/B test, content experiment, what's working, growth metrics analysis
-- HERMIONE → production status, Monday.com, blockers, deadlines, team workload, what's late
-- McGONAGALL → SOP, workflow doc, process guide, how-to, operational structure
-- SNAPE → AI tool recommendation, prompt engineering, technology evaluation
-- HAGRID → team management, 1:1 prep, employee feedback, HR, people issues
-- LUPIN → onboarding, training doc, how to teach the team something
-- NEVILLE → fact-check, research, verify a claim, competitor analysis, accuracy
-- DRACO → poke holes in a plan, challenge a strategy, stress-test an idea
-- ARTHUR → FTC compliance, earnings disclaimer, health claims, copyright, platform policy
-- DOBBY → automation, Zapier, Make flow, Notion template, remove a manual process
+ROUTING RULES (use first match — "build/create/write/make/draft" does NOT mean DUMBLEDORE, route to the specialist):
+- KINGSLEY → urgent, crisis, emergency, something is broken or on fire, ASAP
+- HARRY → review/critique/give feedback on a video, design, thumbnail, motion asset, creative work
+- FRED → write a hook, viral concept, YouTube video idea, TikTok script, high-retention script
+- RON → campaign idea, content brief, marketing strategy, brainstorm content angles, content calendar
+- GINNY → social media strategy, Reels, TikTok, Instagram growth, short-form platform plan
+- LUNA → GFX brief, motion graphics, animation direction, visual effects, lower thirds
+- FLEUR → product name, tagline, ad copy, landing page copy, YouTube title, email subject line, write copy
+- SIRIUS → brand strategy, brand voice, positioning, brand audit, brand identity
+- TRELAWNEY → trends, forecasting, algorithm changes, what's coming next, cultural moments
+- GEORGE → A/B test design, content experiment, growth metrics, what's working analysis
+- HERMIONE → production status, Monday.com, blockers, deadlines, team workload, what's late, project update
+- McGONAGALL → build/create/write/draft an SOP, workflow doc, process guide, checklist, operational structure, document a process, step-by-step guide
+- SNAPE → AI tool, prompt engineering, technology recommendation, tool evaluation
+- HAGRID → team management, 1:1 prep, employee feedback, HR issue, people management
+- LUPIN → onboarding doc, training material, how to teach, ramp-up plan, new hire
+- NEVILLE → fact-check, research, verify a claim, competitor analysis, accuracy audit
+- DRACO → poke holes in, challenge, stress-test, devil's advocate, critique a plan
+- ARTHUR → FTC, compliance, legal risk, earnings disclaimer, health claims, copyright
+- DOBBY → automation, Zapier, Make, Notion template, remove a manual process, automate
 - MOODY → content audit, QC check, brand safety, risk review, ad policy compliance
-- DUMBLEDORE → daily priorities, what to focus on, executive decision, synthesise multiple domains
-- TONKS → anything else that doesn't fit above
+- DUMBLEDORE → ONLY for: what should I focus on today, prioritise my day, help me decide between options, synthesise multiple things at once
+- TONKS → anything else that doesn't clearly fit above
 
-Reply with ONLY the agent name in uppercase. Example: HERMIONE`
+Reply with ONLY the agent name in uppercase. Example: McGONAGALL`
 
 async function routeToAgent(question: string, context?: string): Promise<string> {
   try {
@@ -1052,10 +1052,14 @@ Be specific, actionable, and thorough. The prompt should be immediately usable.`
     const openai = client()
     const model = hasImages ? 'gpt-4o' : agent.model
 
+    // Agents that produce long-form documents get a higher token budget
+    const LONG_FORM_AGENTS = new Set(['McGONAGALL', 'RON', 'FRED', 'LUPIN', 'SIRIUS', 'DOBBY', 'HERMIONE', 'GEORGE', 'KINGSLEY'])
+    const maxTokens = LONG_FORM_AGENTS.has(agentKey) ? 4000 : 2000
+
     if (useStream) {
       const streamRes = await openai.chat.completions.create({
         model,
-        max_tokens: 1024,
+        max_tokens: maxTokens,
         stream: true,
         messages: [
           { role: 'system', content: systemPrompt },
@@ -1088,7 +1092,7 @@ Be specific, actionable, and thorough. The prompt should be immediately usable.`
     // Non-streaming (used by /brief)
     const res = await openai.chat.completions.create({
       model,
-      max_tokens: 1024,
+      max_tokens: maxTokens,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: hasImages ? userContent : finalQuestion },
