@@ -8,7 +8,7 @@ import {
   Home, Bot, MessageSquare, Layers, Globe, Activity, Settings2, Monitor,
   Clapperboard, ChevronRight, ExternalLink, RefreshCw, Terminal,
   Cpu, Database, Bell, Palette, SlidersHorizontal, BookOpen,
-  CheckCircle2, XCircle, Clock, BarChart2,
+  CheckCircle2, XCircle, Clock, BarChart2, Paperclip, Link2, X as XIcon,
 } from 'lucide-react'
 import { NavTabs } from './NavTabs'
 import VideoQCProcessor from './VideoQCProcessor'
@@ -884,6 +884,10 @@ export function HogwartsShell() {
   const [chatError, setChatError] = useState('')
   const [activeAgent, setActiveAgent]   = useState<string | null>(null)
   const [responseId, setResponseId]     = useState(0)
+  const [attachments, setAttachments]   = useState<{dataUrl: string; name: string; type: string}[]>([])
+  const [lastQuestion, setLastQuestion] = useState('')
+  const [lastAttachments, setLastAttachments] = useState<{dataUrl: string; name: string; type: string}[]>([])
+  const attachInputRef = useRef<HTMLInputElement>(null)
 
   // ── Brief state ─────────────────────────────────────────────────────────
   const [briefActive, setBriefActive]   = useState(false)
@@ -1082,7 +1086,7 @@ export function HogwartsShell() {
   }
 
   async function ask() {
-    if (!question.trim() || loading) return
+    if ((!question.trim() && attachments.length === 0) || loading) return
 
     // ── /brief command ────────────────────────────────────────────────────
     if (question.trim().toLowerCase() === '/brief') {
@@ -1102,9 +1106,13 @@ export function HogwartsShell() {
     setLoading(true); setChatError(''); setAnswer(''); setRespondingAgent(''); setActiveAgent(null)
     setBriefActive(false)
     const q = question
+    const att = attachments
+    setLastQuestion(q)
+    setLastAttachments(att)
+    setAttachments([])
     pushLog(`You: "${q.slice(0, 60)}${q.length > 60 ? '…' : ''}"`, 'chat')
     try {
-      const res  = await fetch('/api/agents/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q }) })
+      const res  = await fetch('/api/agents/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, attachments: att }) })
       const data = await res.json()
       if (data.error) {
         setChatError(data.error)
@@ -1664,6 +1672,42 @@ export function HogwartsShell() {
                 )}
                 {!briefActive && answer && !loading && (
                   <div className="space-y-2.5">
+                    {/* User's question bubble */}
+                    {(lastQuestion || lastAttachments.length > 0) && (
+                      <div className="flex justify-end">
+                        <div className="max-w-[85%] bg-[#1a1c2e] border border-[#2a2d3a] rounded-xl rounded-tr-sm px-3 py-2 space-y-1.5">
+                          {/* Attached images */}
+                          {lastAttachments.filter(a => a.type.startsWith('image/')).length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {lastAttachments.filter(a => a.type.startsWith('image/')).map((att, i) => (
+                                <img key={i} src={att.dataUrl} alt={att.name}
+                                  className="max-w-[160px] max-h-[120px] object-cover rounded-lg border border-[#2a2d3a]" />
+                              ))}
+                            </div>
+                          )}
+                          {/* Non-image attachments */}
+                          {lastAttachments.filter(a => !a.type.startsWith('image/')).map((att, i) => (
+                            <div key={i} className="flex items-center gap-1.5 text-[10px] text-gray-400 bg-[#0d0f1a] rounded px-2 py-1">
+                              <Paperclip size={9} className="text-gray-600" /> {att.name}
+                            </div>
+                          ))}
+                          {/* Question text with auto-linked URLs */}
+                          {lastQuestion && (
+                            <p className="text-[11px] text-gray-200 leading-relaxed break-words">
+                              {lastQuestion.split(/(https?:\/\/[^\s]+)/g).map((part, i) =>
+                                /^https?:\/\//.test(part)
+                                  ? <a key={i} href={part} target="_blank" rel="noreferrer"
+                                      className="text-purple-400 hover:text-purple-300 underline underline-offset-2 break-all flex-inline items-center gap-0.5">
+                                      <Link2 size={9} className="inline mr-0.5" />{part}
+                                    </a>
+                                  : part
+                              )}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {/* Agent response header */}
                     <div className="flex items-center gap-2 pb-2.5 border-b border-[#1e2030]">
                       {respondingAvatar && <AgentAvatar avatar={respondingAvatar} name={respondingAgent} color={respondingColor} size={28} />}
                       <div>
@@ -1716,35 +1760,108 @@ export function HogwartsShell() {
 
               {/* Chat input */}
               <div className="flex-shrink-0 space-y-1.5">
-                {/* /qc hint — redirect to QC panel */}
+                {/* /qc hint */}
                 {question.trim().toLowerCase().startsWith('/qc') && (
                   <div className="flex items-center px-1">
-                    <span className="text-[10px] text-red-400 font-mono">
-                      Use the 🎬 QC panel in the sidebar for video QC
-                    </span>
+                    <span className="text-[10px] text-red-400 font-mono">Use the 🎬 QC panel in the sidebar for video QC</span>
                   </div>
                 )}
-                {/* /rr hint — redirect to Knowledge panel */}
+                {/* /rr hint */}
                 {question.trim().toLowerCase().startsWith('/rr') && (
                   <div className="flex items-center px-1">
-                    <span className="text-[10px] text-amber-400 font-mono">
-                      Press Enter to open the 📚 Revenue Rush knowledge base
-                    </span>
+                    <span className="text-[10px] text-amber-400 font-mono">Press Enter to open the 📚 Revenue Rush knowledge base</span>
                   </div>
                 )}
-                <div className="flex gap-2">
+
+                {/* Attachment previews */}
+                {attachments.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 px-1">
+                    {attachments.map((att, i) => (
+                      <div key={i} className="relative group flex-shrink-0">
+                        {att.type.startsWith('image/') ? (
+                          <img src={att.dataUrl} alt={att.name}
+                            className="w-14 h-14 object-cover rounded-lg border border-[#2a2d3a]" />
+                        ) : (
+                          <div className="w-14 h-14 flex flex-col items-center justify-center bg-[#1e2030] rounded-lg border border-[#2a2d3a] gap-1">
+                            <Paperclip size={14} className="text-gray-500" />
+                            <span className="text-[8px] text-gray-600 truncate w-12 text-center px-1">{att.name}</span>
+                          </div>
+                        )}
+                        <button
+                          onClick={() => setAttachments(a => a.filter((_, j) => j !== i))}
+                          className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-[#2a2d3a] hover:bg-red-900/60 border border-[#3a3d50] rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <XIcon size={8} className="text-gray-400" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Input row */}
+                <div className="flex gap-1.5">
+                  {/* Hidden file input */}
+                  <input
+                    ref={attachInputRef}
+                    type="file"
+                    className="hidden"
+                    accept="image/*,video/*,.pdf,.doc,.docx,.txt"
+                    multiple
+                    onChange={e => {
+                      const files = Array.from(e.target.files ?? [])
+                      files.forEach(file => {
+                        const reader = new FileReader()
+                        reader.onload = ev => {
+                          setAttachments(a => [...a, {
+                            dataUrl: ev.target?.result as string,
+                            name: file.name,
+                            type: file.type,
+                          }])
+                        }
+                        reader.readAsDataURL(file)
+                      })
+                      e.target.value = ''
+                    }}
+                  />
+                  {/* Attach button */}
+                  <button
+                    onClick={() => attachInputRef.current?.click()}
+                    className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-lg bg-[#0d0f1a] border border-[#1e2030] text-gray-600 hover:text-gray-300 hover:border-[#2a2d3a] transition-all"
+                    title="Attach image or file"
+                  >
+                    <Paperclip size={14} />
+                  </button>
+                  {/* Text input */}
                   <input
                     id="hw-input"
                     type="text"
                     value={question}
                     onChange={e => { setQuestion(e.target.value); if (!e.target.value.startsWith('@')) setActiveAgent(null) }}
                     onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask() } }}
-                    placeholder="@mention, ask anything, /brief, /qc, or /rr for knowledge base…"
+                    onPaste={e => {
+                      // Handle image paste from clipboard
+                      const items = Array.from(e.clipboardData.items)
+                      const imgItem = items.find(it => it.type.startsWith('image/'))
+                      if (imgItem) {
+                        e.preventDefault()
+                        const file = imgItem.getAsFile()
+                        if (!file) return
+                        const reader = new FileReader()
+                        reader.onload = ev => setAttachments(a => [...a, {
+                          dataUrl: ev.target?.result as string,
+                          name: 'pasted-image.png',
+                          type: 'image/png',
+                        }])
+                        reader.readAsDataURL(file)
+                      }
+                    }}
+                    placeholder="@mention, ask anything, paste an image, /brief, /qc, /rr…"
                     className="flex-1 bg-[#07080e] border border-[#1e2030] rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-700 focus:outline-none focus:border-purple-700/60 transition-colors"
                   />
+                  {/* Send button */}
                   <button
                     onClick={ask}
-                    disabled={!question.trim() || loading}
+                    disabled={(!question.trim() && attachments.length === 0) || loading}
                     className="flex-shrink-0 bg-purple-800/80 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg px-3 py-2 transition-colors"
                   >
                     {loading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}

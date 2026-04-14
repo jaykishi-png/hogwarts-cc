@@ -108,30 +108,49 @@ function parseMention(question: string): { agent: string | null; cleanQuestion: 
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
+interface Attachment { dataUrl: string; name: string; type: string }
+
 export async function POST(req: NextRequest) {
-  const { question } = await req.json()
-  if (!question) return NextResponse.json({ error: 'No question provided' }, { status: 400 })
+  const { question, attachments } = await req.json() as { question: string; attachments?: Attachment[] }
+
+  const hasAttachments = attachments && attachments.length > 0
+  if (!question && !hasAttachments) return NextResponse.json({ error: 'No question provided' }, { status: 400 })
 
   try {
-    client() // validate key exists
+    client()
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 503 })
   }
 
   try {
-    // Check for @mention first
-    const { agent: mentionedAgent, cleanQuestion } = parseMention(question)
-    const agentKey = mentionedAgent ?? await routeToAgent(question)
+    const { agent: mentionedAgent, cleanQuestion } = parseMention(question ?? '')
+    const agentKey = mentionedAgent ?? await routeToAgent(question ?? 'Analyze the attached image(s)')
     const agent = AGENTS[agentKey]
-    const finalQuestion = mentionedAgent ? cleanQuestion : question
+    const finalQuestion = mentionedAgent ? cleanQuestion : (question || 'Analyze the attached image(s) and provide detailed feedback.')
+
+    // Build user message content — include images if present
+    const images = (attachments ?? []).filter(a => a.type.startsWith('image/'))
+    const hasImages = images.length > 0
+
+    type ContentPart =
+      | { type: 'text'; text: string }
+      | { type: 'image_url'; image_url: { url: string; detail: 'high' } }
+
+    const userContent: ContentPart[] = [
+      { type: 'text', text: finalQuestion },
+      ...images.map(img => ({
+        type: 'image_url' as const,
+        image_url: { url: img.dataUrl, detail: 'high' as const },
+      })),
+    ]
 
     const openai = client()
     const res = await openai.chat.completions.create({
-      model: agent.model,
+      model: hasImages ? 'gpt-4o' : agent.model,   // always use gpt-4o for vision
       max_tokens: 1024,
       messages: [
         { role: 'system', content: agent.system },
-        { role: 'user', content: finalQuestion },
+        { role: 'user', content: hasImages ? userContent : finalQuestion },
       ],
     })
 
