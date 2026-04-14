@@ -18,6 +18,8 @@ import remarkGfm from 'remark-gfm'
 import { AgentAvatar } from './hogwarts/AgentAvatar'
 import { PanelErrorBoundary } from './hogwarts/PanelErrorBoundary'
 import { Furniture } from './hogwarts/PixelFurniture'
+import { CommandPalette } from './hogwarts/CommandPalette'
+import { NotificationFeed } from './hogwarts/NotificationFeed'
 import {
   AGENTS_DEF, COLOR_MAP, RING_MAP, TEXT_MAP, BADGE_MAP, ROOMS, GLOW,
   CHARACTER_MAP, DESK_POS, MEETING_POS, BRIEF_SEQUENCE, INITIAL_AGENTS,
@@ -285,6 +287,24 @@ export function HogwartsShell() {
   const [activeTool, setActiveTool]     = useState('office')
   const [activeBotTab, setActiveBotTab] = useState('environment')
 
+  // ── Command palette state ────────────────────────────────────────────────
+  const [paletteOpen, setPaletteOpen] = useState(false)
+
+  // ── Toolbar order state ──────────────────────────────────────────────────
+  const DEFAULT_TOOL_ORDER = ['office', 'agents', 'chat', 'qc', 'knowledge', 'env', 'layout', 'activity', 'notifications', 'settings']
+  const [toolOrder, setToolOrder] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return DEFAULT_TOOL_ORDER
+    try {
+      const saved = localStorage.getItem('hw-tool-order')
+      return saved ? JSON.parse(saved) : DEFAULT_TOOL_ORDER
+    } catch { return DEFAULT_TOOL_ORDER }
+  })
+
+  function handleReorder(newOrder: string[]) {
+    setToolOrder(newOrder)
+    try { localStorage.setItem('hw-tool-order', JSON.stringify(newOrder)) } catch {}
+  }
+
   // When a new response arrives → agent walks to conference room and starts talking
   useEffect(() => {
     if (!respondingAgent || responseId === 0) return
@@ -311,6 +331,18 @@ export function HogwartsShell() {
     if (!briefActive && !showHistory)
       briefScrollRef.current?.scrollTo({ top: briefScrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, loading]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── ⌘K / Ctrl+K → command palette ───────────────────────────────────────
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setPaletteOpen(p => !p)
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [])
 
   // ── Office helpers ───────────────────────────────────────────────────────
   function pushLog(msg: string, type: LogEntry['type']) {
@@ -1731,6 +1763,14 @@ export function HogwartsShell() {
 
         </div>
       </div>
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onSetTool={setActiveTool}
+        onMentionAgent={mentionAgent}
+        onNewConversation={newConversation}
+      />
     </div>
   )
 }
