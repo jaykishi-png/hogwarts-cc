@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
             quality: 'standard',
             n: 1,
           })
-          return { ...section, imageUrl: imgRes.data[0]?.url ?? undefined }
+          return { ...section, imageUrl: imgRes.data?.[0]?.url ?? undefined }
         } catch (err) {
           return { ...section, imageError: String(err).slice(0, 100) }
         }
