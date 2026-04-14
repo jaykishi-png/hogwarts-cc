@@ -9,6 +9,85 @@ const client = () => {
   return new OpenAI({ apiKey })
 }
 
+// ─── Live data helpers ────────────────────────────────────────────────────────
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([promise, new Promise<T>(resolve => setTimeout(() => resolve(fallback), ms))])
+}
+
+async function getCalendarContext(): Promise<string> {
+  try {
+    const refreshToken = process.env.GOOGLE_REFRESH_TOKEN
+    if (!refreshToken) return ''
+
+    // Refresh to get access token
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id:     process.env.GOOGLE_CLIENT_ID ?? '',
+        client_secret: process.env.GOOGLE_CLIENT_SECRET ?? '',
+        refresh_token: refreshToken,
+        grant_type:    'refresh_token',
+      }),
+    })
+    const tokenData = await tokenRes.json() as { access_token?: string }
+    const accessToken = tokenData.access_token
+    if (!accessToken) return ''
+
+    const { fetchTodayEventsRaw } = await import('@/lib/integrations/google-calendar')
+    const { events } = await fetchTodayEventsRaw(accessToken, refreshToken)
+    if (!events || events.length === 0) return 'No calendar events today.'
+
+    const lines = (events as Array<{ title?: string; start?: string; end?: string; location?: string }>)
+      .slice(0, 10)
+      .map(e => {
+        const time = e.start ? new Date(e.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : ''
+        return `- ${time ? time + ': ' : ''}${e.title ?? 'Untitled'}${e.location ? ` (${e.location})` : ''}`
+      })
+    return `Today's calendar (${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}):\n${lines.join('\n')}`
+  } catch {
+    return ''
+  }
+}
+
+async function getSlackContext(): Promise<string> {
+  try {
+    const { fetchMentionsAndDMs } = await import('@/lib/integrations/slack')
+    const messages = await fetchMentionsAndDMs(24)
+    if (!messages || messages.length === 0) return 'No recent Slack messages.'
+    const lines = (messages as Array<{ text?: string; channel?: string; channelName?: string; userName?: string }>)
+      .slice(0, 8)
+      .map(m => `- [${m.channelName ?? m.channel ?? 'DM'}] ${m.userName ?? 'Someone'}: ${(m.text ?? '').slice(0, 120)}`)
+    return `Recent Slack messages (last 24h):\n${lines.join('\n')}`
+  } catch {
+    return ''
+  }
+}
+
+async function getMondayContext(): Promise<string> {
+  try {
+    const apiToken = process.env.MONDAY_API_TOKEN
+    if (!apiToken) return ''
+    const { fetchAssignedItems } = await import('@/lib/integrations/monday')
+    const items = await fetchAssignedItems(apiToken)
+    if (!items || items.length === 0) return 'No active Monday.com items.'
+    // Find blocked/overdue items first
+    const allItems = items as Array<{ name?: string; status?: string; boardName?: string; dueDate?: string; needsReview?: boolean }>
+    const blockedFirst = [...allItems].sort((a, b) => {
+      const aBlocked = /blocked|stuck|waiting/i.test(a.status ?? '')
+      const bBlocked = /blocked|stuck|waiting/i.test(b.status ?? '')
+      return aBlocked === bBlocked ? 0 : aBlocked ? -1 : 1
+    })
+    const lines = blockedFirst
+      .slice(0, 12)
+      .map(item => `- [${item.boardName ?? 'Board'}] ${item.name ?? 'Untitled'} — ${item.status ?? 'unknown'}${item.dueDate ? ` (due ${item.dueDate})` : ''}`)
+    return `Monday.com active items (${allItems.length} total):\n${lines.join('\n')}`
+  } catch {
+    return ''
+  }
+}
+
 // ─── Agent profiles ───────────────────────────────────────────────────────────
 
 const AGENTS: Record<string, { name: string; model: string; system: string; color: string }> = {
@@ -186,8 +265,23 @@ export async function POST(req: NextRequest) {
       })),
     ]
 
-    // Inject conversation memory into system prompt
+    // Inject live data for specific agents
+    let liveDataContext = ''
+    if (agentKey === 'HERMIONE') {
+      liveDataContext = await withTimeout(getMondayContext(), 4000, '')
+    } else if (agentKey === 'DUMBLEDORE') {
+      const [calCtx, slackCtx] = await Promise.all([
+        withTimeout(getCalendarContext(), 4000, ''),
+        withTimeout(getSlackContext(), 4000, ''),
+      ])
+      liveDataContext = [calCtx, slackCtx].filter(Boolean).join('\n\n')
+    }
+
+    // Build system prompt with optional live data AND memory context
     let systemPrompt = agent.system
+    if (liveDataContext) {
+      systemPrompt += `\n\n## Live Data (as of right now)\n${liveDataContext}`
+    }
     if (context) {
       systemPrompt += `\n\n## Recent conversation context\n${context.slice(0, 3000)}`
     }
