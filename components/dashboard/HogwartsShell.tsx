@@ -1448,6 +1448,9 @@ export function HogwartsShell() {
                 <p className="text-[9px] font-semibold text-gray-700 uppercase tracking-wider mb-2">
                   Hogwarts AI Taskforce — click to chat
                 </p>
+                <div className="max-h-[152px] overflow-y-auto pr-0.5
+                  [&::-webkit-scrollbar]:w-[2px] [&::-webkit-scrollbar-track]:bg-transparent
+                  [&::-webkit-scrollbar-thumb]:bg-[#2a2d3a] [&::-webkit-scrollbar-thumb]:rounded-full">
                 <div className="grid grid-cols-4 gap-1.5">
                   {AGENTS_DEF.map(agent => {
                     const live = agents.find(a => a.name === agent.name)!
@@ -1487,6 +1490,7 @@ export function HogwartsShell() {
                     <span className="text-[15px]">💬</span>
                     <span className="text-[8px] font-semibold">Discord</span>
                   </a>
+                </div>
                 </div>
               </div>
 
@@ -1789,45 +1793,50 @@ export function HogwartsShell() {
                       e.target.value = ''
                     }}
                   />
-                  <button
-                    onClick={() => { setPromptBuilderOpen(true); setPromptBuilderResult(''); setPromptBuilderInput('') }}
-                    className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-lg bg-[#0d0f1a] border border-[#1e2030] text-gray-600 hover:text-purple-400 hover:border-purple-800/40 transition-all"
-                    title="Build / expand a prompt"
-                  >
-                    <Wand2 size={14} />
-                  </button>
-                  <button
-                    onClick={() => attachInputRef.current?.click()}
-                    className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-lg bg-[#0d0f1a] border border-[#1e2030] text-gray-600 hover:text-gray-300 hover:border-[#2a2d3a] transition-all"
-                    title="Attach image or file"
-                  >
-                    <Paperclip size={14} />
-                  </button>
-                  <textarea
-                    ref={textareaRef}
-                    id="hw-input"
-                    rows={1}
-                    value={question}
-                    onChange={e => { setQuestion(e.target.value); if (!e.target.value.startsWith('@')) setActiveAgent(null) }}
-                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask() } }}
-                    onPaste={e => {
-                      const items = Array.from(e.clipboardData.items)
-                      const imgItem = items.find(it => it.type.startsWith('image/'))
-                      if (imgItem) {
-                        e.preventDefault()
-                        const file = imgItem.getAsFile()
-                        if (!file) return
-                        const reader = new FileReader()
-                        reader.onload = ev => setAttachments(a => [...a, {
-                          dataUrl: ev.target?.result as string, name: 'pasted-image.png', type: 'image/png',
-                        }])
-                        reader.readAsDataURL(file)
-                      }
-                    }}
-                    placeholder="@mention, ask anything, paste an image, /brief, /qc, /rr…"
-                    className="flex-1 bg-[#07080e] border border-[#1e2030] rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-700 focus:outline-none focus:border-purple-700/60 transition-colors resize-none overflow-hidden leading-relaxed"
-                    style={{ minHeight: 40 }}
-                  />
+                  <div className="relative flex-1">
+                    <textarea
+                      ref={textareaRef}
+                      id="hw-input"
+                      rows={1}
+                      value={question}
+                      onChange={e => { setQuestion(e.target.value); if (!e.target.value.startsWith('@')) setActiveAgent(null) }}
+                      onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask() } }}
+                      onPaste={e => {
+                        const items = Array.from(e.clipboardData.items)
+                        const imgItem = items.find(it => it.type.startsWith('image/'))
+                        if (imgItem) {
+                          e.preventDefault()
+                          const file = imgItem.getAsFile()
+                          if (!file) return
+                          const reader = new FileReader()
+                          reader.onload = ev => setAttachments(a => [...a, {
+                            dataUrl: ev.target?.result as string, name: 'pasted-image.png', type: 'image/png',
+                          }])
+                          reader.readAsDataURL(file)
+                        }
+                      }}
+                      placeholder="@mention, ask anything, paste an image, /brief, /qc, /rr…"
+                      className="w-full bg-[#07080e] border border-[#1e2030] rounded-lg pl-3 pr-16 py-2 text-sm text-gray-200 placeholder-gray-700 focus:outline-none focus:border-purple-700/60 transition-colors resize-none overflow-hidden leading-relaxed"
+                      style={{ minHeight: 40 }}
+                    />
+                    {/* Inline icons inside the textarea */}
+                    <div className="absolute right-2 bottom-0 flex items-center gap-1" style={{ height: 40 }}>
+                      <button
+                        onClick={() => { setPromptBuilderOpen(true); setPromptBuilderResult(''); setPromptBuilderInput('') }}
+                        className="w-6 h-6 flex items-center justify-center rounded text-gray-600 hover:text-purple-400 transition-colors"
+                        title="Build / expand a prompt"
+                      >
+                        <Wand2 size={13} />
+                      </button>
+                      <button
+                        onClick={() => attachInputRef.current?.click()}
+                        className="w-6 h-6 flex items-center justify-center rounded text-gray-600 hover:text-gray-300 transition-colors"
+                        title="Attach image or file"
+                      >
+                        <Paperclip size={13} />
+                      </button>
+                    </div>
+                  </div>
                   <button
                     onClick={ask}
                     disabled={(!question.trim() && attachments.length === 0) || loading}
