@@ -1453,6 +1453,42 @@ export function HogwartsShell() {
                     </div>
                   </div>
 
+                  {/* Agent icon row */}
+                  <div className="flex-shrink-0 flex items-center gap-1.5 overflow-x-auto pb-0.5
+                    [&::-webkit-scrollbar]:h-[2px] [&::-webkit-scrollbar-track]:bg-transparent
+                    [&::-webkit-scrollbar-thumb]:bg-[#2a2d3a] [&::-webkit-scrollbar-thumb]:rounded-full">
+                    {AGENTS_DEF.map(agent => {
+                      const live = agents.find(a => a.name === agent.name)!
+                      const isResponding = agent.name === respondingAgent && messages.length > 0
+                      const isMentioned = activeAgent === agent.name
+                      return (
+                        <button
+                          key={agent.name}
+                          onClick={() => mentionAgent(agent.name)}
+                          title={`Chat with ${agent.name}`}
+                          className={`flex-shrink-0 flex items-center gap-1.5 rounded-lg border px-2 py-1.5 transition-all duration-150 hover:scale-[1.03] cursor-pointer
+                            ${COLOR_MAP[agent.color]}
+                            ${isResponding ? 'ring-2 ring-offset-1 ring-offset-[#07080e] ' + RING_MAP[agent.color] + ' shadow-lg' : ''}
+                            ${isMentioned && !isResponding ? 'ring-2 ring-offset-1 ring-offset-[#07080e] ' + RING_MAP[agent.color] : ''}
+                          `}
+                        >
+                          <div className="relative flex-shrink-0">
+                            <AgentAvatar avatar={agent.avatar} name={agent.name} color={agent.color} size={22} />
+                            <span className={`absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full ring-1 ring-[#0d0f1a] ${
+                              live.status === 'online'     ? 'bg-green-400' :
+                              live.status === 'working'    ? 'bg-amber-400 animate-pulse' :
+                              live.status === 'in-meeting' ? 'bg-blue-400' : 'bg-gray-600'
+                            }`} />
+                          </div>
+                          <span className={`text-[9px] font-bold whitespace-nowrap ${isResponding ? TEXT_MAP[agent.color] ?? 'text-purple-300' : 'text-gray-400'}`}>
+                            {agent.name === 'McGONAGALL' ? 'McGON.' : agent.name.slice(0, 7)}
+                          </span>
+                          {isResponding && <span className="text-[9px] animate-pulse">💬</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+
                   {/* Input area */}
                   <div className="flex-shrink-0 space-y-2">
                     {attachments.length > 0 && (
