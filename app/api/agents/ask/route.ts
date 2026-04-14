@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
+import { getRelevantMemories, formatMemoriesForPrompt } from '@/lib/memory'
 
 export const maxDuration = 60
 
@@ -1035,10 +1036,20 @@ Be specific, actionable, and thorough. The prompt should be immediately usable.`
       } catch { /* KB unavailable — continue without it */ }
     })() : Promise.resolve()
 
+    // Fetch long-term memories in parallel
+    const memories = await withTimeout(
+      getRelevantMemories(finalQuestion, agentKey).catch(() => []),
+      3000,
+      []
+    )
+
     await Promise.all([liveDataFetch, withTimeout(kbFetch, 8000, undefined)])
 
-    // Build system prompt with optional live data, KB context, and conversation context
+    // Build system prompt with optional live data, KB context, memories, and conversation context
     let systemPrompt = agent.system
+    if (memories.length > 0) {
+      systemPrompt += `\n\n## Long-Term Memory (what you already know about Jay's work)\n${formatMemoriesForPrompt(memories)}`
+    }
     if (kbContext) {
       systemPrompt += `\n\n## Revenue Rush Knowledge Base (relevant excerpts)\n${kbContext.slice(0, 2000)}`
     }
@@ -1071,16 +1082,31 @@ Be specific, actionable, and thorough. The prompt should be immediately usable.`
       const readable = new ReadableStream({
         async start(controller) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'agent', agent: agent.name, color: agent.color })}\n\n`))
+          let fullResponse = ''
           try {
             for await (const chunk of streamRes) {
               const delta = chunk.choices[0]?.delta?.content ?? ''
               if (delta) {
+                fullResponse += delta
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'delta', content: delta })}\n\n`))
               }
             }
           } finally {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`))
             controller.close()
+            // Fire-and-forget memory extraction
+            if (fullResponse && finalQuestion) {
+              fetch(`${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/api/memory/extract`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  question: finalQuestion,
+                  answer: fullResponse.slice(0, 1500),
+                  agent: agentKey,
+                  conversationId: context ? 'ongoing' : 'new',
+                }),
+              }).catch(() => { /* silent — never block the response */ })
+            }
           }
         },
       })
@@ -1099,6 +1125,19 @@ Be specific, actionable, and thorough. The prompt should be immediately usable.`
       ],
     })
     const answer = res.choices[0]?.message?.content ?? 'No response'
+    // Fire-and-forget memory extraction
+    if (answer && finalQuestion) {
+      fetch(`${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/api/memory/extract`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: finalQuestion,
+          answer: answer.slice(0, 1500),
+          agent: agentKey,
+          conversationId: context ? 'ongoing' : 'new',
+        }),
+      }).catch(() => { /* silent */ })
+    }
     return NextResponse.json({ answer, agent: agent.name, color: agent.color })
 
   } catch (err) {

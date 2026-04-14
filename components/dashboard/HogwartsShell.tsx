@@ -9,7 +9,7 @@ import {
   Clapperboard, ChevronRight, ExternalLink, RefreshCw, Terminal,
   Cpu, Database, Bell, Palette, SlidersHorizontal, BookOpen,
   CheckCircle2, XCircle, Clock, BarChart2, Paperclip, Link2, X as XIcon, Plus,
-  Wand2, Sparkles, Tag, Trash2,
+  Wand2, Sparkles, Tag, Trash2, Brain,
 } from 'lucide-react'
 import { NavTabs } from './NavTabs'
 import VideoQCProcessor from './VideoQCProcessor'
@@ -23,6 +23,7 @@ import { CommandPalette } from './hogwarts/CommandPalette'
 import { NotificationFeed } from './hogwarts/NotificationFeed'
 import { GFXGeneratorPanel } from './hogwarts/GFXGeneratorPanel'
 import { ProductNamePanel } from './hogwarts/ProductNamePanel'
+import { MemoryPanel } from './hogwarts/MemoryPanel'
 import {
   AGENTS_DEF, COLOR_MAP, RING_MAP, TEXT_MAP, BADGE_MAP, ROOMS, GLOW,
   CHARACTER_MAP, DESK_POS, MEETING_POS, BRIEF_SEQUENCE, INITIAL_AGENTS,
@@ -86,6 +87,7 @@ function LeftToolbar({ active, setActive }: { active: string; setActive: (k: str
     { key: 'knowledge', icon: BookOpen,      label: 'Knowledge Base' },
     { key: 'gfx',      icon: Sparkles,      label: 'GFX Generator' },
     { key: 'product',  icon: Tag,           label: 'Product Names' },
+    { key: 'memory',   icon: Brain,         label: 'Agent Memory' },
     null,
     { key: 'env',      icon: Globe,         label: 'Environment' },
     { key: 'layout',   icon: Layers,        label: 'Layout' },
@@ -784,6 +786,15 @@ export function HogwartsShell() {
               </PanelErrorBoundary>
             )}
 
+            {/* ── Memory Panel ─────────────────────────────────────────────── */}
+            {activeTool === 'memory' && (
+              <PanelErrorBoundary panelName="Agent Memory">
+                <div className="flex-1 overflow-hidden flex flex-col h-full">
+                  <MemoryPanel />
+                </div>
+              </PanelErrorBoundary>
+            )}
+
             {/* ── Full Chat Panel ───────────────────────────────────────────── */}
             {activeTool === 'chat' && (
               <PanelErrorBoundary panelName="Chat">
@@ -1348,7 +1359,7 @@ export function HogwartsShell() {
 
             {/* ── Floor plan ────────────────────────────────────────────────── */}
             <div
-              className={`flex-1 min-w-0 relative rounded-xl overflow-hidden border-2 border-[#1a0e06] ${['qc','agents','activity','env','layout','settings','chat','knowledge','gfx','product'].includes(activeTool) ? 'hidden' : ''}`}
+              className={`flex-1 min-w-0 relative rounded-xl overflow-hidden border-2 border-[#1a0e06] ${['qc','agents','activity','env','layout','settings','chat','knowledge','gfx','product','memory'].includes(activeTool) ? 'hidden' : ''}`}
               style={{
                 background: '#8b5c30',
                 backgroundImage: [
