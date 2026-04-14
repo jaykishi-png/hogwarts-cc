@@ -1858,9 +1858,9 @@ export function HogwartsShell() {
               ))}
             </div>
 
-            {/* ── Right panel (chat) ────────────────────────────────────────── */}
+            {/* ── Right panel (chat) — hidden in full chat view ─────────────── */}
             <div
-              className="w-[376px] flex-shrink-0 flex flex-col gap-2 relative"
+              className={`w-[376px] flex-shrink-0 flex flex-col gap-2 relative ${activeTool === 'chat' ? 'hidden' : ''}`}
               onDragOver={e => { e.preventDefault(); setIsDragOver(true) }}
               onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragOver(false) }}
               onDrop={e => {
