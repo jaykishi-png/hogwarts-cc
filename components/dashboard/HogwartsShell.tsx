@@ -9,7 +9,8 @@ import {
   Clapperboard, ChevronRight, ExternalLink, RefreshCw, Terminal,
   Cpu, Database, Bell, Palette, SlidersHorizontal, BookOpen,
   CheckCircle2, XCircle, Clock, BarChart2, Paperclip, Link2, X as XIcon, Plus,
-  Wand2, Sparkles, Tag, Trash2, Brain,
+  Wand2, Sparkles, Tag, Trash2, Brain, Mail, Calendar, Film,
+  PlayCircle, BookMarked, Fish, Mic, MicOff, Download, BarChart,
 } from 'lucide-react'
 import { NavTabs } from './NavTabs'
 import VideoQCProcessor from './VideoQCProcessor'
@@ -24,12 +25,24 @@ import { NotificationFeed } from './hogwarts/NotificationFeed'
 import { GFXGeneratorPanel } from './hogwarts/GFXGeneratorPanel'
 import { ProductNamePanel } from './hogwarts/ProductNamePanel'
 import { MemoryPanel } from './hogwarts/MemoryPanel'
+import { QuickActionsPanel } from './hogwarts/QuickActionsPanel'
+import { SavedPromptsPanel } from './hogwarts/SavedPromptsPanel'
+import { BatchHookPanel } from './hogwarts/BatchHookPanel'
+import { CollaborationPanel } from './hogwarts/CollaborationPanel'
+import { UnifiedInboxPanel } from './hogwarts/UnifiedInboxPanel'
+import { ProactiveAlerts } from './hogwarts/ProactiveAlerts'
+import { ContentCalendarPanel } from './hogwarts/ContentCalendarPanel'
+import { AgentStatsPanel } from './hogwarts/AgentStatsPanel'
+import { ScheduledBriefPanel } from './hogwarts/ScheduledBriefPanel'
+import { YouTubePanel } from './hogwarts/YouTubePanel'
+import { FrameioPanel } from './hogwarts/FrameioPanel'
+import { VoiceInput } from '@/lib/voice-input'
 import {
   AGENTS_DEF, COLOR_MAP, RING_MAP, TEXT_MAP, BADGE_MAP, ROOMS, GLOW,
   CHARACTER_MAP, DESK_POS, MEETING_POS, BRIEF_SEQUENCE, INITIAL_AGENTS,
   getPos, HW_CONVO_KEY, loadConversations, saveConversations,
 } from './hogwarts/types'
-import type { RoomId, AgentStatus, AgentState, LogEntry, BriefEntry, ChatMessage, Conversation, RoomConfig } from './hogwarts/types'
+import type { RoomId, AgentStatus, AgentState, LogEntry, BriefEntry, ChatMessage, Conversation, RoomConfig, Pos } from './hogwarts/types'
 
 
 
@@ -80,20 +93,33 @@ function SettingToggle({ label, sub, defaultOn = false, disabled = false }: { la
 
 function LeftToolbar({ active, setActive }: { active: string; setActive: (k: string) => void }) {
   const tools: ({ key: string; icon: React.ElementType; label: string } | null)[] = [
-    { key: 'office',    icon: Monitor,       label: 'Office Map' },
-    { key: 'agents',    icon: Bot,           label: 'Agents' },
-    { key: 'chat',      icon: MessageSquare, label: 'Chat' },
-    { key: 'qc',        icon: Clapperboard,  label: 'Video QC' },
-    { key: 'knowledge', icon: BookOpen,      label: 'Knowledge Base' },
-    { key: 'gfx',      icon: Sparkles,      label: 'GFX Generator' },
-    { key: 'product',  icon: Tag,           label: 'Product Names' },
-    { key: 'memory',   icon: Brain,         label: 'Agent Memory' },
+    { key: 'office',       icon: Monitor,      label: 'Office Map' },
+    { key: 'agents',       icon: Bot,          label: 'Agents' },
+    { key: 'chat',         icon: MessageSquare,label: 'Chat' },
+    { key: 'inbox',        icon: Mail,         label: 'Unified Inbox' },
+    { key: 'collaborate',  icon: Users,        label: 'Collaborate' },
     null,
-    { key: 'env',      icon: Globe,         label: 'Environment' },
-    { key: 'layout',   icon: Layers,        label: 'Layout' },
-    { key: 'activity', icon: Activity,      label: 'Activity' },
+    { key: 'quick',        icon: Zap,          label: 'Quick Actions' },
+    { key: 'saved',        icon: BookMarked,   label: 'Saved Prompts' },
+    { key: 'batch-hooks',  icon: Fish,         label: 'Batch Hooks' },
+    { key: 'calendar',     icon: Calendar,     label: 'Content Calendar' },
     null,
-    { key: 'settings', icon: Settings2,     label: 'Settings' },
+    { key: 'qc',           icon: Clapperboard, label: 'Video QC' },
+    { key: 'frameio',      icon: Film,         label: 'Frame.io Reviews' },
+    { key: 'gfx',         icon: Sparkles,     label: 'GFX Generator' },
+    { key: 'product',     icon: Tag,          label: 'Product Names' },
+    null,
+    { key: 'knowledge',   icon: BookOpen,     label: 'Knowledge Base' },
+    { key: 'memory',      icon: Brain,        label: 'Agent Memory' },
+    { key: 'stats',       icon: BarChart,     label: 'Agent Stats' },
+    { key: 'youtube',     icon: PlayCircle,   label: 'YouTube Analytics' },
+    { key: 'brief-sched', icon: Clock,        label: 'Scheduled Brief' },
+    null,
+    { key: 'env',         icon: Globe,        label: 'Environment' },
+    { key: 'layout',      icon: Layers,       label: 'Layout' },
+    { key: 'activity',    icon: Activity,     label: 'Activity' },
+    null,
+    { key: 'settings',    icon: Settings2,    label: 'Settings' },
   ]
   return (
     <aside className="w-11 flex-shrink-0 flex flex-col items-center py-2 gap-0 bg-[#0a0c14] border-r border-[#1e2030] overflow-y-auto overflow-x-hidden">
@@ -183,23 +209,31 @@ function BottomBar({
 
 // ─── MiniCharacter (floor plan sprite) ────────────────────────────────────────
 
-function MiniCharacter({ agent, isWalking, facingLeft, onClick, highlighted }: {
+function MiniCharacter({ agent, isWalking, facingLeft, onClick, highlighted, posOverride }: {
   agent: AgentState; isWalking: boolean; facingLeft: boolean; onClick: () => void; highlighted: boolean
+  posOverride?: Pos
 }) {
   const CharSVG = CHARACTER_MAP[agent.name]
   const glow = highlighted
     ? 'drop-shadow(0 0 10px rgba(96,165,250,1)) drop-shadow(0 0 22px rgba(96,165,250,0.55))'
     : GLOW[agent.color]
+  const pos = posOverride ?? getPos(agent)
 
   return (
     <button
+      draggable
+      onDragStart={e => {
+        e.dataTransfer.setData('agent', agent.name)
+        e.dataTransfer.effectAllowed = 'move'
+      }}
       onClick={onClick}
-      className="absolute select-none cursor-pointer focus:outline-none hover:brightness-110 active:scale-95"
-      title={`${agent.name} — ${agent.currentRoom === 'great-hall' ? 'return to desk' : 'call to conference room'}`}
+      className="absolute select-none focus:outline-none hover:brightness-110 active:scale-95"
+      title={`${agent.name} — drag to reposition · click to ${agent.currentRoom === 'great-hall' ? 'return to desk' : 'call to meeting'}`}
       style={{
-        left: `${getPos(agent).x}%`, top: `${getPos(agent).y}%`,
+        left: `${pos.x}%`, top: `${pos.y}%`,
         transform: 'translate(-50%, -50%)',
-        transition: 'left 0.75s cubic-bezier(0.4,0,0.2,1), top 0.75s cubic-bezier(0.4,0,0.2,1)',
+        cursor: 'grab',
+        transition: posOverride ? 'none' : 'left 0.75s cubic-bezier(0.4,0,0.2,1), top 0.75s cubic-bezier(0.4,0,0.2,1)',
         zIndex: highlighted ? 100 : isWalking ? 50 : 10,
         willChange: isWalking ? 'left, top' : 'auto',
       }}
@@ -240,10 +274,11 @@ function MiniCharacter({ agent, isWalking, facingLeft, onClick, highlighted }: {
   )
 }
 
-function TrackedCharacter({ agent, isMoving, onClick, highlighted }: {
+function TrackedCharacter({ agent, isMoving, onClick, highlighted, posOverride }: {
   agent: AgentState; isMoving: boolean; onClick: () => void; highlighted: boolean
+  posOverride?: Pos
 }) {
-  const pos = getPos(agent)
+  const pos = posOverride ?? getPos(agent)
   const prevPos = useRef(pos)
   const [facingLeft, setFacingLeft] = useState(false)
   useEffect(() => {
@@ -251,7 +286,7 @@ function TrackedCharacter({ agent, isMoving, onClick, highlighted }: {
     if (Math.abs(dx) > 0.5) setFacingLeft(dx < 0)
     prevPos.current = pos
   }, [pos.x, pos.y]) // eslint-disable-line react-hooks/exhaustive-deps
-  return <MiniCharacter agent={agent} isWalking={isMoving} facingLeft={facingLeft} onClick={onClick} highlighted={highlighted} />
+  return <MiniCharacter agent={agent} isWalking={isMoving} facingLeft={facingLeft} onClick={onClick} highlighted={highlighted} posOverride={posOverride} />
 }
 
 
@@ -303,6 +338,21 @@ export function HogwartsShell() {
   const [promptBuilderInput, setPromptBuilderInput]     = useState('')
   const [promptBuilderResult, setPromptBuilderResult]   = useState('')
   const [promptBuilderLoading, setPromptBuilderLoading] = useState(false)
+
+  // ── Drag-to-reposition state ─────────────────────────────────────────
+  const [dragPos, setDragPos] = useState<Record<string, Pos>>(() => {
+    if (typeof window === 'undefined') return {}
+    try { const s = localStorage.getItem('hw-drag-pos'); return s ? JSON.parse(s) : {} } catch { return {} }
+  })
+  const floorRef = useRef<HTMLDivElement>(null)
+
+  // ── Voice input state ────────────────────────────────────────────────
+  const [isListening, setIsListening] = useState(false)
+  const voiceInputRef = useRef<VoiceInput | null>(null)
+  const voiceSupported = typeof window !== 'undefined' && VoiceInput.isSupported()
+
+  // ── Saved-to-Notion state (per message) ─────────────────────────────
+  const [savedMsgIds, setSavedMsgIds] = useState<Set<string>>(new Set())
 
   // ── Toolbar order state ──────────────────────────────────────────────────
   const DEFAULT_TOOL_ORDER = ['office', 'agents', 'chat', 'qc', 'knowledge', 'env', 'layout', 'activity', 'notifications', 'settings']
@@ -367,6 +417,28 @@ export function HogwartsShell() {
   }, [question])
 
   // ── Office helpers ───────────────────────────────────────────────────────
+  function getRoomFromPos(x: number, y: number): RoomId {
+    if (y < 44) {
+      if (x < 22) return 'headmaster'
+      if (x < 64) return 'great-hall'
+      return 'lab'
+    }
+    if (y < 82) {
+      if (x < 28) return 'operations'
+      if (x < 64) return 'creative'
+      return 'archive'
+    }
+    return 'common'
+  }
+
+  function updateDragPos(name: string, pos: Pos) {
+    setDragPos(p => {
+      const next = { ...p, [name]: pos }
+      try { localStorage.setItem('hw-drag-pos', JSON.stringify(next)) } catch {}
+      return next
+    })
+  }
+
   function pushLog(msg: string, type: LogEntry['type']) {
     setLog(p => [{ time: format(new Date(), 'HH:mm:ss'), msg, type }, ...p].slice(0, 50))
   }
@@ -710,6 +782,47 @@ export function HogwartsShell() {
     }
   }
 
+  // ── Fire a preset prompt directly ───────────────────────────────────────
+  function firePrompt(prompt: string) {
+    setQuestion(prompt)
+    setActiveTool('office')
+    setTimeout(() => {
+      const el = document.getElementById('hw-input') as HTMLTextAreaElement | null
+      if (el) { el.focus(); el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) }
+    }, 60)
+  }
+
+  // ── Voice input toggle ───────────────────────────────────────────────────
+  function toggleVoice() {
+    if (!voiceSupported) return
+    if (isListening) {
+      voiceInputRef.current?.stop()
+      voiceInputRef.current = null
+      setIsListening(false)
+    } else {
+      const vi = new VoiceInput({
+        onResult: (t) => { setQuestion(q => q + t); setIsListening(false) },
+        onEnd:    ()  => setIsListening(false),
+        onError:  ()  => setIsListening(false),
+      })
+      voiceInputRef.current = vi
+      vi.start()
+      setIsListening(true)
+    }
+  }
+
+  // ── Save message to Notion ────────────────────────────────────────────────
+  async function saveToNotion(msgId: string, content: string, agentName: string) {
+    try {
+      await fetch('/api/memory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: `[${agentName}]: ${content}`, type: 'insight', tags: [agentName, 'saved'] }),
+      })
+      setSavedMsgIds(p => new Set([...p, msgId]))
+    } catch { /* silently fail */ }
+  }
+
   const onlineCount    = agents.filter(a => a.status !== 'away').length
   const inMeetingCount = agents.filter(a => a.currentRoom === 'great-hall').length
 
@@ -791,6 +904,96 @@ export function HogwartsShell() {
               <PanelErrorBoundary panelName="Agent Memory">
                 <div className="flex-1 overflow-hidden flex flex-col h-full">
                   <MemoryPanel />
+                </div>
+              </PanelErrorBoundary>
+            )}
+
+            {/* ── Unified Inbox Panel ───────────────────────────────────────── */}
+            {activeTool === 'inbox' && (
+              <PanelErrorBoundary panelName="Unified Inbox">
+                <div className="flex-1 overflow-hidden flex flex-col h-full">
+                  <UnifiedInboxPanel />
+                </div>
+              </PanelErrorBoundary>
+            )}
+
+            {/* ── Collaboration Panel ───────────────────────────────────────── */}
+            {activeTool === 'collaborate' && (
+              <PanelErrorBoundary panelName="Agent Collaboration">
+                <div className="flex-1 overflow-hidden flex flex-col h-full">
+                  <CollaborationPanel onAction={firePrompt} />
+                </div>
+              </PanelErrorBoundary>
+            )}
+
+            {/* ── Quick Actions Panel ───────────────────────────────────────── */}
+            {activeTool === 'quick' && (
+              <PanelErrorBoundary panelName="Quick Actions">
+                <div className="flex-1 overflow-hidden flex flex-col h-full">
+                  <QuickActionsPanel onAction={firePrompt} />
+                </div>
+              </PanelErrorBoundary>
+            )}
+
+            {/* ── Saved Prompts Panel ───────────────────────────────────────── */}
+            {activeTool === 'saved' && (
+              <PanelErrorBoundary panelName="Saved Prompts">
+                <div className="flex-1 overflow-hidden flex flex-col h-full">
+                  <SavedPromptsPanel onAction={firePrompt} />
+                </div>
+              </PanelErrorBoundary>
+            )}
+
+            {/* ── Batch Hook Generator Panel ────────────────────────────────── */}
+            {activeTool === 'batch-hooks' && (
+              <PanelErrorBoundary panelName="Batch Hook Generator">
+                <div className="flex-1 overflow-hidden flex flex-col h-full">
+                  <BatchHookPanel />
+                </div>
+              </PanelErrorBoundary>
+            )}
+
+            {/* ── Content Calendar Panel ────────────────────────────────────── */}
+            {activeTool === 'calendar' && (
+              <PanelErrorBoundary panelName="Content Calendar">
+                <div className="flex-1 overflow-hidden flex flex-col h-full">
+                  <ContentCalendarPanel />
+                </div>
+              </PanelErrorBoundary>
+            )}
+
+            {/* ── Agent Stats Panel ─────────────────────────────────────────── */}
+            {activeTool === 'stats' && (
+              <PanelErrorBoundary panelName="Agent Stats">
+                <div className="flex-1 overflow-hidden flex flex-col h-full">
+                  <AgentStatsPanel />
+                </div>
+              </PanelErrorBoundary>
+            )}
+
+            {/* ── YouTube Analytics Panel ───────────────────────────────────── */}
+            {activeTool === 'youtube' && (
+              <PanelErrorBoundary panelName="YouTube Analytics">
+                <div className="flex-1 overflow-hidden flex flex-col h-full">
+                  <YouTubePanel />
+                </div>
+              </PanelErrorBoundary>
+            )}
+
+            {/* ── Scheduled Brief Panel ─────────────────────────────────────── */}
+            {activeTool === 'brief-sched' && (
+              <PanelErrorBoundary panelName="Scheduled Brief">
+                <div className="flex-1 overflow-hidden flex flex-col h-full">
+                  <ScheduledBriefPanel />
+                </div>
+              </PanelErrorBoundary>
+            )}
+
+            {/* ── Frame.io Panel ────────────────────────────────────────────── */}
+            {activeTool === 'frameio' && (
+              <PanelErrorBoundary panelName="Frame.io Reviews">
+                <div className="flex-1 overflow-hidden flex flex-col h-full">
+                  <FrameioPanel onAction={firePrompt} />
                 </div>
               </PanelErrorBoundary>
             )}
@@ -1303,6 +1506,16 @@ export function HogwartsShell() {
                         <RotateCcw size={11} /> Reset all agents to home rooms
                       </button>
                       <button
+                        onClick={() => {
+                          setDragPos({})
+                          try { localStorage.removeItem('hw-drag-pos') } catch {}
+                          pushLog('Agent positions reset to defaults.', 'status')
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-[#07080e] border border-[#1e2030] hover:border-amber-700/40 hover:text-gray-200 text-gray-500 text-[11px] transition-all"
+                      >
+                        <RotateCcw size={11} /> Reset custom agent positions
+                      </button>
+                      <button
                         onClick={() => triggerRandomMeeting()}
                         className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-[#07080e] border border-[#1e2030] hover:border-blue-700/40 hover:text-gray-200 text-gray-500 text-[11px] transition-all"
                       >
@@ -1359,7 +1572,23 @@ export function HogwartsShell() {
 
             {/* ── Floor plan ────────────────────────────────────────────────── */}
             <div
-              className={`flex-1 min-w-0 relative rounded-xl overflow-hidden border-2 border-[#1a0e06] ${['qc','agents','activity','env','layout','settings','chat','knowledge','gfx','product','memory'].includes(activeTool) ? 'hidden' : ''}`}
+              ref={floorRef}
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => {
+                e.preventDefault()
+                const agentName = e.dataTransfer.getData('agent')
+                if (!agentName || !floorRef.current) return
+                const rect = floorRef.current.getBoundingClientRect()
+                const x = Math.max(3, Math.min(97, ((e.clientX - rect.left) / rect.width) * 100))
+                const y = Math.max(3, Math.min(97, ((e.clientY - rect.top)  / rect.height) * 100))
+                updateDragPos(agentName, { x, y })
+                const newRoom = getRoomFromPos(x, y)
+                if (newRoom !== 'great-hall') {
+                  setAgents(p => p.map(a => a.name === agentName ? { ...a, homeRoom: newRoom, currentRoom: newRoom } : a))
+                  pushLog(`${agentName} moved to ${ROOMS[newRoom].label}.`, 'move')
+                }
+              }}
+              className={`flex-1 min-w-0 relative rounded-xl overflow-hidden border-2 border-[#1a0e06] ${['qc','agents','activity','env','layout','settings','chat','knowledge','gfx','product','memory','inbox','collaborate','quick','saved','batch-hooks','calendar','stats','youtube','brief-sched','frameio'].includes(activeTool) ? 'hidden' : ''}`}
               style={{
                 background: '#8b5c30',
                 backgroundImage: [
@@ -1423,6 +1652,7 @@ export function HogwartsShell() {
                   isMoving={moving.has(agent.name)}
                   onClick={() => handleAgentClick(agent.name)}
                   highlighted={agent.name === respondingAgent && messages.length > 0}
+                  posOverride={agent.currentRoom !== 'great-hall' ? dragPos[agent.name] : undefined}
                 />
               ))}
             </div>
@@ -1453,6 +1683,9 @@ export function HogwartsShell() {
                   </div>
                 </div>
               )}
+
+              {/* Proactive alerts banner */}
+              <ProactiveAlerts onAction={firePrompt} />
 
               {/* Agent roster */}
               <div className="flex-shrink-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-2.5">
@@ -1694,6 +1927,13 @@ export function HogwartsShell() {
                                 <AgentAvatar avatar={msg.agentAvatar!} name={msg.agent!} color={msg.agentColor!} size={22} />
                                 <span className={`text-[10px] font-bold uppercase tracking-wide ${TEXT_MAP[msg.agentColor ?? 'purple'] ?? 'text-purple-300'}`}>{msg.agent}</span>
                                 <span className="text-[8px] text-gray-600 ml-auto font-mono">{msg.timestamp}</span>
+                                <button
+                                  onClick={() => saveToNotion(msg.id, msg.content, msg.agent ?? 'AGENT')}
+                                  title={savedMsgIds.has(msg.id) ? 'Saved to Notion' : 'Save to Notion'}
+                                  className={`w-5 h-5 flex items-center justify-center rounded transition-colors flex-shrink-0 ${savedMsgIds.has(msg.id) ? 'text-emerald-400' : 'text-gray-700 hover:text-gray-400'}`}
+                                >
+                                  <Download size={9} />
+                                </button>
                               </div>
                               <div className="ml-7 prose prose-invert max-w-none text-xs text-gray-300">
                                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
@@ -1832,6 +2072,15 @@ export function HogwartsShell() {
                     />
                     {/* Inline icons inside the textarea */}
                     <div className="absolute right-2 bottom-0 flex items-center gap-1" style={{ height: 40 }}>
+                      {voiceSupported && (
+                        <button
+                          onClick={toggleVoice}
+                          className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${isListening ? 'text-red-400 animate-pulse' : 'text-gray-600 hover:text-blue-400'}`}
+                          title={isListening ? 'Stop listening' : 'Voice input'}
+                        >
+                          {isListening ? <MicOff size={13} /> : <Mic size={13} />}
+                        </button>
+                      )}
                       <button
                         onClick={() => { setPromptBuilderOpen(true); setPromptBuilderResult(''); setPromptBuilderInput('') }}
                         className="w-6 h-6 flex items-center justify-center rounded text-gray-600 hover:text-purple-400 transition-colors"

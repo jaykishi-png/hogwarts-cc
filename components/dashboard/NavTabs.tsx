@@ -2,16 +2,16 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
-import { LayoutDashboard } from 'lucide-react'
+import { Crosshair } from 'lucide-react'
 
 type TabKey = 'dashboard' | 'hogwarts' | 'office'
 
 const TABS: { key: TabKey; label: string; href: string; icon: React.ReactNode }[] = [
   {
     key: 'dashboard',
-    label: 'Dashboard',
+    label: 'Mission HQ',
     href: '/',
-    icon: <LayoutDashboard size={12} />,
+    icon: <Crosshair size={12} />,
   },
   {
     key: 'hogwarts',

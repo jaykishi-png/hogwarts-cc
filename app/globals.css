@@ -49,8 +49,13 @@ body {
 
 /* ── Face animations ─────────────────────────────────────── */
 @keyframes blink {
-  0%, 82%, 100% { transform: scaleY(0);   }
-  88%, 95%      { transform: scaleY(1);   }
+  /* Eyes open most of the time, quick snap-close, brief hold, natural open */
+  0%,  87%,  100% { transform: scaleY(0); }   /* fully open */
+  89%              { transform: scaleY(1); }   /* snap closed */
+  91%              { transform: scaleY(0.05); } /* snap open */
+  /* occasional double-blink */
+  93%              { transform: scaleY(1); }
+  95%              { transform: scaleY(0); }
 }
 @keyframes look-side {
   0%, 30%, 100% { transform: translateX(0);    }
@@ -67,9 +72,9 @@ body {
   75%      { transform: rotate(-1.5deg);}
 }
 
-.eyelid   { transform-box: fill-box; transform-origin: center; }
-.eyelid-l { animation: blink    3.4s ease-in-out infinite;       }
-.eyelid-r { animation: blink    3.4s ease-in-out infinite 0.06s; }
+.eyelid   { transform-box: fill-box; transform-origin: top center; }
+.eyelid-l { animation: blink    4.2s ease-in-out infinite;        }
+.eyelid-r { animation: blink    4.2s ease-in-out infinite 0.08s;  }
 .pupils   { animation: look-side 5.5s ease-in-out infinite;      }
 .head-bob { animation: head-idle 4s   ease-in-out infinite;      }
 .mouth-talking {
