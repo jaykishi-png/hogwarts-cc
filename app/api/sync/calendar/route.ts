@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { fetchTodayEventsRaw } from '@/lib/integrations/google-calendar'
 import { upsertSourceItem } from '@/lib/db/source-items'
 import { startSyncLog, completeSyncLog } from '@/lib/db/sync-log'
+import { cacheGet, cacheSet, CACHE_TTL } from '@/lib/cache/panel-cache'
+
+const CACHE_KEY = 'sync:calendar'
 
 async function getAccessToken(): Promise<string | null> {
   const refreshToken = process.env.GOOGLE_REFRESH_TOKEN
@@ -22,6 +25,11 @@ async function getAccessToken(): Promise<string | null> {
 
 // GET — returns today's events (used by useCalendar hook)
 export async function GET(_req: NextRequest) {
+  const cached = cacheGet<{ events: unknown[]; error?: string }>(CACHE_KEY)
+  if (cached) {
+    return NextResponse.json({ ...cached, cached: true, cachedAt: Date.now() })
+  }
+
   const refreshToken = process.env.GOOGLE_REFRESH_TOKEN
   if (!refreshToken) {
     return NextResponse.json({ events: [], error: 'Google Calendar not configured' })
@@ -31,7 +39,9 @@ export async function GET(_req: NextRequest) {
     return NextResponse.json({ events: [], error: 'Failed to refresh Google access token' })
   }
   const { events, error } = await fetchTodayEventsRaw(accessToken, refreshToken)
-  return NextResponse.json({ events, error })
+  const result = { events, error }
+  if (!error) cacheSet(CACHE_KEY, result, CACHE_TTL.CALENDAR)
+  return NextResponse.json(result)
 }
 
 // POST — sync calendar events as source items (for prep task detection)

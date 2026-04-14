@@ -127,6 +127,7 @@ export async function POST(req: NextRequest) {
     let metaBlock:   string        = ''
     let existingComments: string[] = []
     let usedApi = false
+    let asset: Record<string, unknown> | null = null
 
     const parsed = parseFrameioUrl(resolvedUrl)
 
@@ -141,24 +142,24 @@ export async function POST(req: NextRequest) {
           } catch { /* fall through to direct asset lookup */ }
         }
 
-        const asset = await frameioGet(`/assets/${resolvedAssetId}`)
+        asset     = await frameioGet(`/assets/${resolvedAssetId}`)
         assetId   = resolvedAssetId
         usedApi   = true
-        assetName = asset.name ?? 'Untitled'
-        thumbUrl  = asset.thumb_orig ?? asset.image_full ?? asset.image_128 ?? null
-        transcript = asset.transcription ?? asset.transcription_text ?? null
+        assetName = (asset?.name as string) ?? 'Untitled'
+        thumbUrl  = (asset?.thumb_orig ?? asset?.image_full ?? asset?.image_128 ?? null) as string | null
+        transcript = (asset?.transcription ?? asset?.transcription_text ?? null) as string | null
 
         const meta = {
           name:       assetName,
-          duration:   formatDuration(asset.duration),
-          fps:        asset.fps ?? asset.framerate ?? 'unknown',
-          resolution: asset.original
-            ? `${asset.original.width} × ${asset.original.height}`
-            : asset.dimensions
-              ? `${asset.dimensions.width} × ${asset.dimensions.height}`
+          duration:   formatDuration(asset?.duration as number),
+          fps:        (asset?.fps ?? asset?.framerate ?? 'unknown') as string,
+          resolution: asset?.original
+            ? `${(asset.original as Record<string, unknown>).width} × ${(asset.original as Record<string, unknown>).height}`
+            : asset?.dimensions
+              ? `${(asset.dimensions as Record<string, unknown>).width} × ${(asset.dimensions as Record<string, unknown>).height}`
               : 'unknown',
-          filesize:  formatFilesize(asset.filesize),
-          uploadedAt: asset.uploaded_at ? new Date(asset.uploaded_at).toLocaleDateString() : 'unknown',
+          filesize:  formatFilesize(asset?.filesize as number),
+          uploadedAt: asset?.uploaded_at ? new Date(asset.uploaded_at as string).toLocaleDateString() : 'unknown',
         }
         metaBlock = [
           `- **File:** ${meta.name}`,
@@ -203,34 +204,55 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── 4. Visual QC — GPT-4o Vision on thumbnail ─────────────────────────
-    // Decode HTML entities in the URL (OG-scraped URLs often contain &amp; etc.)
+    // ── 4. Visual QC — multi-frame analysis ──────────────────────────────────
     if (thumbUrl) thumbUrl = decodeHtmlEntities(thumbUrl)
 
+    // Collect all available frame URLs
+    const frameUrls: string[] = []
+    if (thumbUrl) frameUrls.push(thumbUrl)
+
+    // When using the Frame.io API, extract additional unique thumbnail URLs
+    if (usedApi) {
+      const extras = [asset?.image_full, asset?.image_128, asset?.thumb_256, asset?.thumb_720]
+      for (const u of extras) {
+        if (typeof u === 'string' && u) {
+          const decoded = decodeHtmlEntities(u)
+          if (!frameUrls.includes(decoded)) frameUrls.push(decoded)
+        }
+      }
+    }
+
     let visualSection = '_No thumbnail available for visual analysis._'
-    if (thumbUrl) {
+    if (frameUrls.length > 0) {
+      type VisionPart =
+        | { type: 'text'; text: string }
+        | { type: 'image_url'; image_url: { url: string; detail: 'high' } }
+
+      const parts: VisionPart[] = [
+        {
+          type: 'text',
+          text: `You are a senior video editor performing quality control. You are analyzing ${frameUrls.length} frame(s) from a production video.
+
+For EACH frame, evaluate:
+1. **On-screen text / titles / lower thirds** — typos, wrong fonts, misalignment, readability
+2. **Exposure** — overexposed, underexposed, crushed blacks, blown highlights
+3. **Framing & composition** — cut-off subjects, rule-of-thirds, tilted horizon
+4. **Color grading** — unnatural skin tones, inconsistent color, color cast
+5. **Visual artifacts** — compression blocks, moire, noise, motion blur
+6. **Safe zones** — titles or subjects too close to frame edge
+
+Status for each: PASS ✅, ISSUE ⚠️, or N/A. If frames differ, note the inconsistency. Be specific.`,
+        },
+        ...frameUrls.slice(0, 4).map((url): VisionPart => ({
+          type: 'image_url',
+          image_url: { url, detail: 'high' },
+        })),
+      ]
+
       const visionRes = await openai.chat.completions.create({
         model: 'gpt-4o',
-        messages: [{
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: `You are a senior video editor performing quality control on a production video. Analyze this frame carefully for:
-
-1. **On-screen text / titles / lower thirds** — typos, wrong fonts, misalignment, readability issues
-2. **Exposure** — overexposed, underexposed, crushed blacks, blown highlights
-3. **Framing & composition** — cut-off subjects, poor rule-of-thirds, tilted horizon
-4. **Color grading** — unnatural skin tones, inconsistent color, heavy color cast
-5. **Visual artifacts** — compression blocks, moire, noise, motion blur
-6. **Safe zones** — titles or key subjects too close to frame edge
-
-For each: PASS ✅, ISSUE ⚠️, or N/A. Be specific. If the frame looks professionally done, say so.`,
-            },
-            { type: 'image_url', image_url: { url: thumbUrl, detail: 'high' } },
-          ],
-        }],
-        max_tokens: 600,
+        messages: [{ role: 'user', content: parts }],
+        max_tokens: 800,
       })
       visualSection = visionRes.choices[0].message.content ?? visualSection
     }
@@ -310,7 +332,7 @@ Use this exact structure:
 - [Bullet list of specific fixes. If no issues: "No actions required — file is ready for delivery."]
 
 ---
-*Note: Visual analysis is based on a single thumbnail frame. Full jump-cut and scene consistency checks require frame-by-frame review.*`,
+*Note: Visual analysis based on ${frameUrls.length} available frame(s).${frameUrls.length < 2 ? ' For full consistency checks, use frame-by-frame review.' : ' Multi-frame consistency has been evaluated.'}*`,
         },
       ],
       max_tokens: 900,
@@ -334,6 +356,7 @@ Use this exact structure:
       color:     'red',
       assetName,
       assetId,
+      framesAnalyzed: frameUrls.length,
     })
 
   } catch (err: unknown) {

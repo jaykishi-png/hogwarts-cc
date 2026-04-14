@@ -4,6 +4,9 @@ import { listTasks, getTaskBySourceItem, createTask, updateTask } from '@/lib/db
 import { upsertSourceItem, linkSourceItemToTask } from '@/lib/db/source-items'
 import { startSyncLog, completeSyncLog } from '@/lib/db/sync-log'
 import { getConfig } from '@/lib/db/config'
+import { cacheGet, cacheSet, cacheInvalidate, CACHE_TTL } from '@/lib/cache/panel-cache'
+
+const CACHE_KEY = 'sync:notion'
 
 export async function POST(_req: NextRequest) {
   if (!process.env.NOTION_TOKEN) {
@@ -14,6 +17,9 @@ export async function POST(_req: NextRequest) {
   if (!databaseId) {
     return NextResponse.json({ error: 'notion_database_id not configured' }, { status: 503 })
   }
+
+  // Invalidate cache on explicit sync
+  cacheInvalidate(CACHE_KEY)
 
   const logId = await startSyncLog('notion')
   let tasksCreated = 0
@@ -109,12 +115,14 @@ export async function POST(_req: NextRequest) {
       tasksUpdated,
     })
 
-    return NextResponse.json({
+    const result = {
       itemsFound: notionTasks.length,
       tasksCreated,
       tasksUpdated,
       pushedToNotion: unpushed.length,
-    })
+    }
+    cacheSet(CACHE_KEY, result, CACHE_TTL.NOTION)
+    return NextResponse.json(result)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('Notion sync error:', message)

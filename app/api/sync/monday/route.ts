@@ -5,6 +5,9 @@ import { upsertSourceItem, linkSourceItemToTask } from '@/lib/db/source-items'
 import { startSyncLog, completeSyncLog } from '@/lib/db/sync-log'
 import { getConfig } from '@/lib/db/config'
 import type { MondayItem } from '@/types/source'
+import { cacheGet, cacheSet, cacheInvalidate, CACHE_TTL } from '@/lib/cache/panel-cache'
+
+const CACHE_KEY = 'sync:monday'
 
 export async function POST(_req: NextRequest) {
   const apiToken = process.env.MONDAY_API_TOKEN
@@ -12,6 +15,9 @@ export async function POST(_req: NextRequest) {
   if (!apiToken) {
     return NextResponse.json({ error: 'MONDAY_API_TOKEN not configured' }, { status: 503 })
   }
+
+  // Invalidate cache on explicit sync
+  cacheInvalidate(CACHE_KEY)
 
   const logId = await startSyncLog('monday')
   let tasksCreated = 0
@@ -82,7 +88,9 @@ export async function POST(_req: NextRequest) {
       tasksUpdated,
     })
 
-    return NextResponse.json({ itemsFound: items.length, tasksCreated, tasksUpdated })
+    const result = { itemsFound: items.length, tasksCreated, tasksUpdated }
+    cacheSet(CACHE_KEY, result, CACHE_TTL.MONDAY)
+    return NextResponse.json(result)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('Monday sync error:', message)
