@@ -8,7 +8,7 @@ import {
   Home, Bot, MessageSquare, Layers, Globe, Activity, Settings2, Monitor,
   Clapperboard, ChevronRight, ExternalLink, RefreshCw, Terminal,
   Cpu, Database, Bell, Palette, SlidersHorizontal, BookOpen,
-  CheckCircle2, XCircle, Clock, BarChart2, Paperclip, Link2, X as XIcon,
+  CheckCircle2, XCircle, Clock, BarChart2, Paperclip, Link2, X as XIcon, Plus,
 } from 'lucide-react'
 import { NavTabs } from './NavTabs'
 import VideoQCProcessor from './VideoQCProcessor'
@@ -70,6 +70,24 @@ interface AgentState {
 }
 interface LogEntry  { time: string; msg: string; type: 'move' | 'status' | 'meeting' | 'chat' }
 interface BriefEntry { agent: string; role: string; color: string; avatar: string; text: string; loading: boolean }
+
+interface ChatMessage {
+  id: string
+  role: 'user' | 'agent'
+  content: string
+  agent?: string
+  agentColor?: string
+  agentAvatar?: string
+  attachments?: { dataUrl: string; name: string; type: string }[]
+  timestamp: string
+}
+interface Conversation {
+  id: string
+  title: string
+  messages: ChatMessage[]
+  createdAt: string
+  updatedAt: string
+}
 
 // ─── /brief command — agent sequence + prompts ────────────────────────────────
 
@@ -857,6 +875,17 @@ function TrackedCharacter({ agent, isMoving, onClick, highlighted }: {
   return <MiniCharacter agent={agent} isWalking={isMoving} facingLeft={facingLeft} onClick={onClick} highlighted={highlighted} />
 }
 
+// ─── Conversation persistence ─────────────────────────────────────────────────
+
+const HW_CONVO_KEY = 'hw-conversations'
+function loadConversations(): Conversation[] {
+  if (typeof window === 'undefined') return []
+  try { return JSON.parse(localStorage.getItem(HW_CONVO_KEY) ?? '[]') } catch { return [] }
+}
+function saveConversations(convos: Conversation[]) {
+  try { localStorage.setItem(HW_CONVO_KEY, JSON.stringify(convos.slice(0, 60))) } catch {}
+}
+
 // ─── Initial state ────────────────────────────────────────────────────────────
 
 const INITIAL_AGENTS: AgentState[] = AGENTS_DEF.map(a => ({
@@ -875,18 +904,20 @@ export function HogwartsShell() {
   ])
 
   // ── Chat state ──────────────────────────────────────────────────────────
-  const [question, setQuestion]         = useState('')
-  const [answer, setAnswer]             = useState('')
+  const [question, setQuestion]               = useState('')
+  const [messages, setMessages]               = useState<ChatMessage[]>([])
+  const [conversations, setConversations]     = useState<Conversation[]>([])
+  const [currentConvoId, setCurrentConvoId]   = useState('')
+  const [showHistory, setShowHistory]         = useState(false)
+  const [isDragOver, setIsDragOver]           = useState(false)
   const [respondingAgent, setRespondingAgent] = useState('')
   const [respondingColor, setRespondingColor] = useState('purple')
   const [respondingAvatar, setRespondingAvatar] = useState('')
-  const [loading, setLoading]     = useState(false)
-  const [chatError, setChatError] = useState('')
-  const [activeAgent, setActiveAgent]   = useState<string | null>(null)
-  const [responseId, setResponseId]     = useState(0)
-  const [attachments, setAttachments]   = useState<{dataUrl: string; name: string; type: string}[]>([])
-  const [lastQuestion, setLastQuestion] = useState('')
-  const [lastAttachments, setLastAttachments] = useState<{dataUrl: string; name: string; type: string}[]>([])
+  const [loading, setLoading]                 = useState(false)
+  const [chatError, setChatError]             = useState('')
+  const [activeAgent, setActiveAgent]         = useState<string | null>(null)
+  const [responseId, setResponseId]           = useState(0)
+  const [attachments, setAttachments]         = useState<{dataUrl: string; name: string; type: string}[]>([])
   const attachInputRef = useRef<HTMLInputElement>(null)
 
   // ── Brief state ─────────────────────────────────────────────────────────
@@ -918,6 +949,15 @@ export function HogwartsShell() {
     }, 20000)
     return () => clearTimeout(tid)
   }, [responseId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Load conversations from localStorage on mount ────────────────────────
+  useEffect(() => { setConversations(loadConversations()) }, [])
+
+  // ── Auto-scroll chat thread when messages change ─────────────────────────
+  useEffect(() => {
+    if (!briefActive && !showHistory)
+      briefScrollRef.current?.scrollTo({ top: briefScrollRef.current.scrollHeight, behavior: 'smooth' })
+  }, [messages, loading]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Office helpers ───────────────────────────────────────────────────────
   function pushLog(msg: string, type: LogEntry['type']) {
@@ -974,7 +1014,6 @@ export function HogwartsShell() {
     setBriefActive(true)
     setBriefDone(false)
     setBriefEntries([])
-    setAnswer('')
     setChatError('')
 
     // Move all specialist agents to the conference room to kick things off
@@ -1085,6 +1124,22 @@ export function HogwartsShell() {
     setTimeout(() => { const el = document.getElementById('hw-input'); if (el) (el as HTMLInputElement).focus() }, 50)
   }
 
+  function newConversation() {
+    setMessages([])
+    setCurrentConvoId('')
+    setChatError('')
+    setShowHistory(false)
+    setBriefActive(false)
+  }
+
+  function loadConversation(convo: Conversation) {
+    setMessages(convo.messages)
+    setCurrentConvoId(convo.id)
+    setChatError('')
+    setShowHistory(false)
+    setBriefActive(false)
+  }
+
   async function ask() {
     if ((!question.trim() && attachments.length === 0) || loading) return
 
@@ -1102,30 +1157,74 @@ export function HogwartsShell() {
       return
     }
 
-
-    setLoading(true); setChatError(''); setAnswer(''); setRespondingAgent(''); setActiveAgent(null)
+    setLoading(true); setChatError(''); setRespondingAgent(''); setActiveAgent(null)
     setBriefActive(false)
-    const q = question
-    const att = attachments
-    setLastQuestion(q)
-    setLastAttachments(att)
+
+    const q   = question
+    const att = attachments.length > 0 ? [...attachments] : []
+    setQuestion('')
     setAttachments([])
+
+    // Get or create conversation ID
+    let convoId = currentConvoId
+    if (!convoId) {
+      convoId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+      setCurrentConvoId(convoId)
+    }
+
+    const userMsg: ChatMessage = {
+      id: Date.now().toString(36) + 'u',
+      role: 'user',
+      content: q,
+      attachments: att.length > 0 ? att : undefined,
+      timestamp: format(new Date(), 'HH:mm'),
+    }
+
+    const withUser = [...messages, userMsg]
+    setMessages(withUser)
     pushLog(`You: "${q.slice(0, 60)}${q.length > 60 ? '…' : ''}"`, 'chat')
+
     try {
       const res  = await fetch('/api/agents/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, attachments: att }) })
       const data = await res.json()
       if (data.error) {
         setChatError(data.error)
       } else {
-        setAnswer(data.answer)
         const agentName = data.agent ?? 'DUMBLEDORE'
+        const agentDef  = AGENTS_DEF.find(a => a.name === agentName)
+
+        const agentMsg: ChatMessage = {
+          id: Date.now().toString(36) + 'a',
+          role: 'agent',
+          content: data.answer,
+          agent: agentName,
+          agentColor: data.color ?? 'purple',
+          agentAvatar: agentDef?.avatar ?? '',
+          timestamp: format(new Date(), 'HH:mm'),
+        }
+
+        const finalMsgs = [...withUser, agentMsg]
+        setMessages(finalMsgs)
+
+        // Persist conversation to localStorage
+        const title = (q || 'Attachment').slice(0, 60) + (q.length > 60 ? '…' : '')
+        const now   = new Date().toISOString()
+        setConversations(convos => {
+          const existing  = convos.find(c => c.id === convoId)
+          const newConvos = existing
+            ? convos.map(c => c.id === convoId ? { ...c, messages: finalMsgs, updatedAt: now } : c)
+            : [{ id: convoId, title, messages: finalMsgs, createdAt: now, updatedAt: now }, ...convos]
+          saveConversations(newConvos)
+          return newConvos
+        })
+
         setRespondingAgent(agentName)
         setRespondingColor(data.color ?? 'purple')
-        setRespondingAvatar(AGENTS_DEF.find(a => a.name === agentName)?.avatar ?? '')
+        setRespondingAvatar(agentDef?.avatar ?? '')
         setResponseId(p => p + 1)
       }
     } catch (err) { setChatError(String(err)) }
-    finally { setLoading(false); setQuestion('') }
+    finally { setLoading(false) }
   }
 
   const onlineCount    = agents.filter(a => a.status !== 'away').length
@@ -1181,6 +1280,259 @@ export function HogwartsShell() {
 
             {/* ── Knowledge Base Panel ───────────────────────────────────────── */}
             {activeTool === 'knowledge' && <KnowledgePanel pushLog={pushLog} />}
+
+            {/* ── Full Chat Panel ───────────────────────────────────────────── */}
+            {activeTool === 'chat' && (
+              <div
+                className="flex-1 min-w-0 flex gap-3 min-h-0 relative"
+                onDragOver={e => { e.preventDefault(); setIsDragOver(true) }}
+                onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragOver(false) }}
+                onDrop={e => {
+                  e.preventDefault(); setIsDragOver(false)
+                  Array.from(e.dataTransfer.files).forEach(file => {
+                    const reader = new FileReader()
+                    reader.onload = ev => setAttachments(a => [...a, {
+                      dataUrl: ev.target?.result as string, name: file.name, type: file.type,
+                    }])
+                    reader.readAsDataURL(file)
+                  })
+                }}
+              >
+                {isDragOver && (
+                  <div className="absolute inset-0 z-50 rounded-xl border-2 border-dashed border-purple-500 bg-purple-900/20 flex items-center justify-center pointer-events-none">
+                    <div className="text-center">
+                      <Paperclip size={32} className="text-purple-400 mx-auto mb-2 opacity-80" />
+                      <p className="text-base font-medium text-purple-300">Drop to attach</p>
+                      <p className="text-sm text-purple-500 mt-0.5">images · video · documents</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Left: conversation history sidebar */}
+                <div className="w-[240px] flex-shrink-0 flex flex-col gap-2 min-h-0">
+                  <div className="flex-shrink-0 flex items-center justify-between">
+                    <p className="text-[10px] font-semibold text-gray-700 uppercase tracking-wider">Conversations</p>
+                    <button
+                      onClick={newConversation}
+                      title="New conversation"
+                      className="flex items-center gap-1 text-[10px] text-purple-400 hover:text-purple-300 border border-purple-800/40 bg-purple-900/15 rounded px-2 py-0.5 transition-colors"
+                    >
+                      <Plus size={9} /> New
+                    </button>
+                  </div>
+                  <div className="flex-1 min-h-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] overflow-y-auto
+                    [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-track]:bg-transparent
+                    [&::-webkit-scrollbar-thumb]:bg-[#2a2d3a] [&::-webkit-scrollbar-thumb]:rounded-full">
+                    <div className="p-2 space-y-1">
+                      {conversations.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-12 gap-2">
+                          <Clock size={22} className="text-gray-700" />
+                          <p className="text-[11px] text-gray-600 text-center">No conversations yet.<br />Ask a question to get started.</p>
+                        </div>
+                      ) : conversations.map(convo => (
+                        <button
+                          key={convo.id}
+                          onClick={() => loadConversation(convo)}
+                          className={`w-full text-left p-2.5 rounded-lg border transition-all ${
+                            convo.id === currentConvoId
+                              ? 'border-purple-700/50 bg-purple-900/15'
+                              : 'border-[#1e2030] bg-transparent hover:border-[#2a2d3a] hover:bg-[#0a0c14]'
+                          }`}
+                        >
+                          <p className="text-[11px] text-gray-200 truncate">{convo.title}</p>
+                          <div className="flex items-center justify-between mt-0.5">
+                            <p className="text-[9px] text-gray-600">{format(new Date(convo.updatedAt), 'MMM d · h:mm a')}</p>
+                            <p className="text-[9px] text-gray-700">{convo.messages.length} msgs</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right: chat thread + input */}
+                <div className="flex-1 min-w-0 flex flex-col gap-2 min-h-0">
+                  {/* Thread header */}
+                  <div className="flex-shrink-0 flex items-center justify-between">
+                    <p className="text-[10px] font-semibold text-gray-700 uppercase tracking-wider">
+                      {currentConvoId
+                        ? (conversations.find(c => c.id === currentConvoId)?.title ?? 'Chat')
+                        : 'New Chat'}
+                    </p>
+                    {messages.length > 0 && (
+                      <span className="text-[9px] text-gray-600 font-mono">{messages.length} messages</span>
+                    )}
+                  </div>
+
+                  {/* Thread scroll area */}
+                  <div className="flex-1 min-h-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] overflow-y-auto p-4
+                    [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-track]:bg-transparent
+                    [&::-webkit-scrollbar-thumb]:bg-[#2a2d3a] [&::-webkit-scrollbar-thumb]:rounded-full">
+                    <div className="space-y-4 max-w-2xl mx-auto">
+                      {messages.length === 0 && !loading && !chatError && (
+                        <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+                          <Image src="/agents/Hogwarts_Cyborg.png" alt="Hogwarts" width={56} height={56}
+                            className="rounded-2xl object-cover object-top opacity-30" />
+                          <p className="text-sm text-gray-600 leading-relaxed">
+                            Start a conversation with your AI taskforce.<br />
+                            Type <span className="text-purple-400 font-mono">/brief</span> for a team briefing,{' '}
+                            <span className="text-amber-400 font-mono">/rr</span> for the knowledge base.
+                          </p>
+                        </div>
+                      )}
+                      {messages.map(msg => (
+                        <div key={msg.id}>
+                          {msg.role === 'user' ? (
+                            <div className="flex justify-end">
+                              <div className="max-w-[75%] bg-[#1a1c2e] border border-[#2a2d3a] rounded-2xl rounded-tr-sm px-4 py-3 space-y-2">
+                                {msg.attachments && msg.attachments.filter(a => a.type.startsWith('image/')).length > 0 && (
+                                  <div className="flex flex-wrap gap-2">
+                                    {msg.attachments.filter(a => a.type.startsWith('image/')).map((att, i) => (
+                                      <img key={i} src={att.dataUrl} alt={att.name}
+                                        className="max-w-[200px] max-h-[160px] object-cover rounded-xl border border-[#2a2d3a]" />
+                                    ))}
+                                  </div>
+                                )}
+                                {msg.attachments && msg.attachments.filter(a => !a.type.startsWith('image/')).map((att, i) => (
+                                  <div key={i} className="flex items-center gap-1.5 text-xs text-gray-400 bg-[#0d0f1a] rounded-lg px-3 py-1.5">
+                                    <Paperclip size={11} className="text-gray-600" /> {att.name}
+                                  </div>
+                                ))}
+                                {msg.content && (
+                                  <p className="text-sm text-gray-200 leading-relaxed break-words">
+                                    {msg.content.split(/(https?:\/\/[^\s]+)/g).map((part, i) =>
+                                      /^https?:\/\//.test(part)
+                                        ? <a key={i} href={part} target="_blank" rel="noreferrer"
+                                            className="text-purple-400 hover:text-purple-300 underline underline-offset-2 break-all">
+                                            <Link2 size={10} className="inline mr-0.5" />{part}
+                                          </a>
+                                        : part
+                                    )}
+                                  </p>
+                                )}
+                                <p className="text-[10px] text-gray-600 text-right">{msg.timestamp}</p>
+                              </div>
+                            </div>
+                          ) : (
+                            <div>
+                              <div className="flex items-center gap-2 mb-2">
+                                <AgentAvatar avatar={msg.agentAvatar!} name={msg.agent!} color={msg.agentColor!} size={28} />
+                                <span className={`text-xs font-bold uppercase tracking-wide ${TEXT_MAP[msg.agentColor ?? 'purple'] ?? 'text-purple-300'}`}>{msg.agent}</span>
+                                <span className="text-[10px] text-gray-600 font-mono ml-auto">{msg.timestamp}</span>
+                              </div>
+                              <div className="ml-9 prose prose-invert max-w-none text-sm text-gray-300">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+                                  h1: ({ children }) => <p className="font-bold text-gray-100 mb-2 mt-3 text-base">{children}</p>,
+                                  h2: ({ children }) => <p className="font-bold text-gray-200 mb-2 mt-3 text-sm">{children}</p>,
+                                  h3: ({ children }) => <p className="font-semibold text-gray-300 mb-1 mt-2 text-sm">{children}</p>,
+                                  p:  ({ children }) => <p className="mb-2.5 leading-relaxed">{children}</p>,
+                                  ul: ({ children }) => <ul className="list-disc list-inside mb-2.5 space-y-1">{children}</ul>,
+                                  ol: ({ children }) => <ol className="list-decimal list-inside mb-2.5 space-y-1">{children}</ol>,
+                                  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                                  strong: ({ children }) => <strong className="font-semibold text-gray-100">{children}</strong>,
+                                  em: ({ children }) => <em className="italic text-gray-400">{children}</em>,
+                                  code: ({ children }) => <code className="bg-[#1e2030] text-purple-300 rounded px-1.5 py-0.5 font-mono text-xs">{children}</code>,
+                                  pre: ({ children }) => <pre className="bg-[#1e2030] rounded-lg p-3 overflow-x-auto text-xs font-mono my-3">{children}</pre>,
+                                  hr: () => <hr className="border-[#2a2d3a] my-4" />,
+                                  blockquote: ({ children }) => <blockquote className="border-l-2 border-purple-700 pl-4 text-gray-400 italic my-3">{children}</blockquote>,
+                                }}>{msg.content}</ReactMarkdown>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      {loading && (
+                        <div className="flex items-center gap-2.5">
+                          <Loader2 size={16} className="animate-spin text-purple-500 opacity-70" />
+                          <p className="text-sm text-gray-600">Consulting agents…</p>
+                        </div>
+                      )}
+                      {chatError && !loading && (
+                        <div className="rounded-xl border border-red-800/40 bg-red-900/20 p-4 text-sm text-red-300">⚠️ {chatError}</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Input area */}
+                  <div className="flex-shrink-0 space-y-2">
+                    {attachments.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {attachments.map((att, i) => (
+                          <div key={i} className="relative group flex-shrink-0">
+                            {att.type.startsWith('image/') ? (
+                              <img src={att.dataUrl} alt={att.name}
+                                className="w-16 h-16 object-cover rounded-xl border border-[#2a2d3a]" />
+                            ) : (
+                              <div className="w-16 h-16 flex flex-col items-center justify-center bg-[#1e2030] rounded-xl border border-[#2a2d3a] gap-1">
+                                <Paperclip size={16} className="text-gray-500" />
+                                <span className="text-[9px] text-gray-600 truncate w-14 text-center px-1">{att.name}</span>
+                              </div>
+                            )}
+                            <button
+                              onClick={() => setAttachments(a => a.filter((_, j) => j !== i))}
+                              className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[#2a2d3a] hover:bg-red-900/60 border border-[#3a3d50] rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <XIcon size={9} className="text-gray-400" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <input ref={attachInputRef} type="file" className="hidden"
+                        accept="image/*,video/*,.pdf,.doc,.docx,.txt" multiple
+                        onChange={e => {
+                          Array.from(e.target.files ?? []).forEach(file => {
+                            const reader = new FileReader()
+                            reader.onload = ev => setAttachments(a => [...a, {
+                              dataUrl: ev.target?.result as string, name: file.name, type: file.type,
+                            }])
+                            reader.readAsDataURL(file)
+                          })
+                          e.target.value = ''
+                        }}
+                      />
+                      <button
+                        onClick={() => attachInputRef.current?.click()}
+                        className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-xl bg-[#0d0f1a] border border-[#1e2030] text-gray-600 hover:text-gray-300 hover:border-[#2a2d3a] transition-all"
+                        title="Attach file"
+                      >
+                        <Paperclip size={16} />
+                      </button>
+                      <input
+                        type="text"
+                        value={question}
+                        onChange={e => { setQuestion(e.target.value); if (!e.target.value.startsWith('@')) setActiveAgent(null) }}
+                        onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask() } }}
+                        onPaste={e => {
+                          const items = Array.from(e.clipboardData.items)
+                          const imgItem = items.find(it => it.type.startsWith('image/'))
+                          if (imgItem) {
+                            e.preventDefault()
+                            const file = imgItem.getAsFile()
+                            if (!file) return
+                            const reader = new FileReader()
+                            reader.onload = ev => setAttachments(a => [...a, {
+                              dataUrl: ev.target?.result as string, name: 'pasted-image.png', type: 'image/png',
+                            }])
+                            reader.readAsDataURL(file)
+                          }
+                        }}
+                        placeholder="@mention an agent, ask anything, paste an image…"
+                        className="flex-1 bg-[#07080e] border border-[#1e2030] rounded-xl px-4 py-2.5 text-sm text-gray-200 placeholder-gray-700 focus:outline-none focus:border-purple-700/60 transition-colors"
+                      />
+                      <button
+                        onClick={ask}
+                        disabled={(!question.trim() && attachments.length === 0) || loading}
+                        className="flex-shrink-0 bg-purple-800/80 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl px-4 py-2.5 transition-colors"
+                      >
+                        {loading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* ── Agents Panel ──────────────────────────────────────────────── */}
             {activeTool === 'agents' && (
@@ -1438,7 +1790,7 @@ export function HogwartsShell() {
 
             {/* ── Floor plan ────────────────────────────────────────────────── */}
             <div
-              className={`flex-1 min-w-0 relative rounded-xl overflow-hidden border-2 border-[#1a0e06] ${['qc','agents','activity','env','layout','settings'].includes(activeTool) ? 'hidden' : ''}`}
+              className={`flex-1 min-w-0 relative rounded-xl overflow-hidden border-2 border-[#1a0e06] ${['qc','agents','activity','env','layout','settings','chat'].includes(activeTool) ? 'hidden' : ''}`}
               style={{
                 background: '#8b5c30',
                 backgroundImage: [
@@ -1501,13 +1853,37 @@ export function HogwartsShell() {
                   agent={agent}
                   isMoving={moving.has(agent.name)}
                   onClick={() => handleAgentClick(agent.name)}
-                  highlighted={agent.name === respondingAgent && !!answer}
+                  highlighted={agent.name === respondingAgent && messages.length > 0}
                 />
               ))}
             </div>
 
             {/* ── Right panel (chat) ────────────────────────────────────────── */}
-            <div className="w-[376px] flex-shrink-0 flex flex-col gap-2">
+            <div
+              className="w-[376px] flex-shrink-0 flex flex-col gap-2 relative"
+              onDragOver={e => { e.preventDefault(); setIsDragOver(true) }}
+              onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragOver(false) }}
+              onDrop={e => {
+                e.preventDefault(); setIsDragOver(false)
+                Array.from(e.dataTransfer.files).forEach(file => {
+                  const reader = new FileReader()
+                  reader.onload = ev => setAttachments(a => [...a, {
+                    dataUrl: ev.target?.result as string, name: file.name, type: file.type,
+                  }])
+                  reader.readAsDataURL(file)
+                })
+              }}
+            >
+              {/* ── Drop overlay ──────────────────────────────────────────── */}
+              {isDragOver && (
+                <div className="absolute inset-0 z-50 rounded-xl border-2 border-dashed border-purple-500 bg-purple-900/20 flex items-center justify-center pointer-events-none">
+                  <div className="text-center">
+                    <Paperclip size={28} className="text-purple-400 mx-auto mb-2 opacity-80" />
+                    <p className="text-sm font-medium text-purple-300">Drop to attach</p>
+                    <p className="text-[11px] text-purple-500 mt-0.5">images · video · documents</p>
+                  </div>
+                </div>
+              )}
 
               {/* Agent roster */}
               <div className="flex-shrink-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-2.5">
@@ -1556,75 +1932,116 @@ export function HogwartsShell() {
                 </div>
               </div>
 
-              {/* ── Response area: brief thread OR single answer ──────────── */}
-              <div
-                ref={briefScrollRef}
-                className="flex-1 min-h-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] overflow-y-auto p-3
-                  [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-track]:bg-transparent
-                  [&::-webkit-scrollbar-thumb]:bg-[#2a2d3a] [&::-webkit-scrollbar-thumb]:rounded-full"
-              >
+              {/* ── Response area: history / brief / chat thread ──────────── */}
+              <div className="flex-1 min-h-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] flex flex-col overflow-hidden">
 
-                {/* ── /brief thread ──────────────────────────────────────── */}
-                {briefActive && (
-                  <div className="space-y-2">
-                    {/* header */}
-                    <div className="flex items-center gap-2 pb-2 border-b border-[#1e2030]">
-                      <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest">📋 End-of-Week Brief</span>
-                      {!briefDone && <Loader2 size={10} className="animate-spin text-purple-500 ml-auto" />}
-                      {briefDone && (
-                        <button
-                          onClick={() => {
-                            const text = briefEntries.map(e => `— ${e.agent} (${e.role})\n${e.text}`).join('\n\n')
-                            navigator.clipboard.writeText(text)
-                          }}
-                          className="ml-auto text-[9px] text-gray-500 hover:text-gray-300 border border-[#2a2d3a] rounded px-2 py-0.5 transition-colors"
-                        >
-                          Copy brief
-                        </button>
-                      )}
+                {/* Panel header */}
+                <div className="flex-shrink-0 flex items-center justify-between px-3 py-1.5 border-b border-[#1e2030]">
+                  <span className="text-[9px] font-semibold text-gray-700 uppercase tracking-wider">
+                    {showHistory ? 'History' : briefActive ? 'Team Brief' : currentConvoId ? 'Chat' : 'New Chat'}
+                  </span>
+                  {!briefActive && (
+                    <div className="flex items-center gap-0.5">
+                      <button
+                        onClick={() => setShowHistory(h => !h)}
+                        title={showHistory ? 'Back to chat' : 'Chat history'}
+                        className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${showHistory ? 'text-purple-400 bg-purple-900/20' : 'text-gray-600 hover:text-gray-300'}`}
+                      >
+                        <Clock size={11} />
+                      </button>
+                      <button
+                        onClick={newConversation}
+                        title="New conversation"
+                        className="w-6 h-6 flex items-center justify-center rounded text-gray-600 hover:text-gray-300 transition-colors"
+                      >
+                        <Plus size={11} />
+                      </button>
                     </div>
+                  )}
+                </div>
 
-                    {/* agent report cards */}
-                    {briefEntries.map((entry, i) => {
-                      const isDumbledore = entry.agent === 'DUMBLEDORE'
-                      return (
-                        <div
-                          key={i}
-                          className={`rounded-lg border p-2.5 transition-all ${
-                            isDumbledore
-                              ? 'border-purple-700/50 bg-purple-900/20'
-                              : 'border-[#1e2030] bg-[#0a0c14]'
+                {/* Scrollable body */}
+                <div
+                  ref={briefScrollRef}
+                  className="flex-1 min-h-0 overflow-y-auto p-3
+                    [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-track]:bg-transparent
+                    [&::-webkit-scrollbar-thumb]:bg-[#2a2d3a] [&::-webkit-scrollbar-thumb]:rounded-full"
+                >
+
+                  {/* ── History list ────────────────────────────────────── */}
+                  {showHistory && !briefActive && (
+                    <div className="space-y-1.5">
+                      {conversations.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-10 gap-2">
+                          <Clock size={22} className="text-gray-700" />
+                          <p className="text-[11px] text-gray-600">No conversations yet</p>
+                          <button onClick={() => setShowHistory(false)}
+                            className="text-[10px] text-purple-400 hover:text-purple-300 transition-colors mt-1">
+                            Start chatting →
+                          </button>
+                        </div>
+                      ) : conversations.map(convo => (
+                        <button
+                          key={convo.id}
+                          onClick={() => loadConversation(convo)}
+                          className={`w-full text-left p-2.5 rounded-lg border transition-all ${
+                            convo.id === currentConvoId
+                              ? 'border-purple-700/50 bg-purple-900/10'
+                              : 'border-[#1e2030] bg-[#0a0c14] hover:border-[#2a2d3a] hover:bg-[#0d0f1a]'
                           }`}
                         >
-                          {/* card header */}
-                          <div className="flex items-center gap-1.5 mb-1.5">
-                            <AgentAvatar
-                              avatar={entry.avatar}
-                              name={entry.agent}
-                              color={entry.color}
-                              size={isDumbledore ? 26 : 20}
-                            />
-                            <div className="flex-1 min-w-0">
-                              <span className={`text-[10px] font-bold uppercase tracking-wide ${TEXT_MAP[entry.color] ?? 'text-gray-300'}`}>
-                                {entry.agent === 'McGONAGALL' ? 'McGONAGALL' : entry.agent}
-                              </span>
-                              <span className="text-[8px] text-gray-600 ml-1.5">{entry.role}</span>
-                            </div>
-                            {entry.loading && <Loader2 size={9} className="animate-spin text-gray-600 flex-shrink-0" />}
+                          <p className="text-[11px] text-gray-200 truncate">{convo.title}</p>
+                          <div className="flex items-center justify-between mt-0.5">
+                            <p className="text-[9px] text-gray-600">{format(new Date(convo.updatedAt), 'MMM d · h:mm a')}</p>
+                            <p className="text-[9px] text-gray-700">{convo.messages.length} msgs</p>
                           </div>
-                          {/* card body */}
-                          {entry.loading && (
-                            <div className="space-y-1">
-                              <div className="h-2 bg-[#1e2030] rounded animate-pulse w-full" />
-                              <div className="h-2 bg-[#1e2030] rounded animate-pulse w-4/5" />
-                              <div className="h-2 bg-[#1e2030] rounded animate-pulse w-3/5" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* ── /brief thread ──────────────────────────────────── */}
+                  {briefActive && !showHistory && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 pb-2 border-b border-[#1e2030]">
+                        <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest">📋 End-of-Week Brief</span>
+                        {!briefDone && <Loader2 size={10} className="animate-spin text-purple-500 ml-auto" />}
+                        {briefDone && (
+                          <button
+                            onClick={() => {
+                              const text = briefEntries.map(e => `— ${e.agent} (${e.role})\n${e.text}`).join('\n\n')
+                              navigator.clipboard.writeText(text)
+                            }}
+                            className="ml-auto text-[9px] text-gray-500 hover:text-gray-300 border border-[#2a2d3a] rounded px-2 py-0.5 transition-colors"
+                          >
+                            Copy brief
+                          </button>
+                        )}
+                      </div>
+                      {briefEntries.map((entry, i) => {
+                        const isDumbledore = entry.agent === 'DUMBLEDORE'
+                        return (
+                          <div key={i} className={`rounded-lg border p-2.5 transition-all ${isDumbledore ? 'border-purple-700/50 bg-purple-900/20' : 'border-[#1e2030] bg-[#0a0c14]'}`}>
+                            <div className="flex items-center gap-1.5 mb-1.5">
+                              <AgentAvatar avatar={entry.avatar} name={entry.agent} color={entry.color} size={isDumbledore ? 26 : 20} />
+                              <div className="flex-1 min-w-0">
+                                <span className={`text-[10px] font-bold uppercase tracking-wide ${TEXT_MAP[entry.color] ?? 'text-gray-300'}`}>
+                                  {entry.agent === 'McGONAGALL' ? 'McGONAGALL' : entry.agent}
+                                </span>
+                                <span className="text-[8px] text-gray-600 ml-1.5">{entry.role}</span>
+                              </div>
+                              {entry.loading && <Loader2 size={9} className="animate-spin text-gray-600 flex-shrink-0" />}
                             </div>
-                          )}
-                          {!entry.loading && entry.text && (
-                            <div className={`prose prose-invert max-w-none ${isDumbledore ? 'text-[11px] text-gray-200' : 'text-[10px] text-gray-400'}`}>
-                              <ReactMarkdown
-                                remarkPlugins={[remarkGfm]}
-                                components={{
+                            {entry.loading && (
+                              <div className="space-y-1">
+                                <div className="h-2 bg-[#1e2030] rounded animate-pulse w-full" />
+                                <div className="h-2 bg-[#1e2030] rounded animate-pulse w-4/5" />
+                                <div className="h-2 bg-[#1e2030] rounded animate-pulse w-3/5" />
+                              </div>
+                            )}
+                            {!entry.loading && entry.text && (
+                              <div className={`prose prose-invert max-w-none ${isDumbledore ? 'text-[11px] text-gray-200' : 'text-[10px] text-gray-400'}`}>
+                                <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
                                   h1: ({ children }) => <p className="font-bold text-gray-100 mb-1 mt-2 text-[11px]">{children}</p>,
                                   h2: ({ children }) => <p className="font-bold text-gray-200 mb-1 mt-2 text-[11px]">{children}</p>,
                                   h3: ({ children }) => <p className="font-semibold text-gray-300 mb-0.5 mt-1.5 text-[10px]">{children}</p>,
@@ -1637,109 +2054,112 @@ export function HogwartsShell() {
                                   code: ({ children }) => <code className="bg-[#1e2030] text-purple-300 rounded px-1 py-0.5 font-mono text-[9px]">{children}</code>,
                                   hr: () => <hr className="border-[#2a2d3a] my-2" />,
                                   blockquote: ({ children }) => <blockquote className="border-l-2 border-purple-700 pl-2 text-gray-400 italic">{children}</blockquote>,
-                                }}
-                              >
-                                {entry.text}
-                              </ReactMarkdown>
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
+                                }}>{entry.text}</ReactMarkdown>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
 
-                {/* ── Single agent answer ────────────────────────────────── */}
-                {!briefActive && !answer && !chatError && !loading && (
-                  <div className="flex flex-col items-center justify-center h-full gap-2.5 text-center">
-                    <Image src="/agents/Hogwarts_Cyborg.png" alt="Hogwarts" width={40} height={40}
-                      className="rounded-xl object-cover object-top opacity-40" />
-                    <p className="text-xs text-gray-600 leading-relaxed">
-                      Ask a question or type <span className="text-purple-500 font-mono">/brief</span> for the team briefing.<br />
-                      Paste a Frame.io link with <span className="text-red-400 font-mono">/qc</span> for video QC.<br />
-                      Type <span className="text-amber-400 font-mono">/rr</span> to open the Revenue Rush knowledge base.
-                    </p>
-                  </div>
-                )}
-                {!briefActive && loading && (
-                  <div className="flex flex-col items-center justify-center h-full gap-2">
-                    <Loader2 size={22} className="animate-spin text-purple-500 opacity-70" />
-                    <p className="text-xs text-gray-600">Consulting agents…</p>
-                  </div>
-                )}
-                {!briefActive && chatError && !loading && (
-                  <div className="rounded-lg border border-red-800/40 bg-red-900/20 p-3 text-xs text-red-300">⚠️ {chatError}</div>
-                )}
-                {!briefActive && answer && !loading && (
-                  <div className="space-y-2.5">
-                    {/* User's question bubble */}
-                    {(lastQuestion || lastAttachments.length > 0) && (
-                      <div className="flex justify-end">
-                        <div className="max-w-[85%] bg-[#1a1c2e] border border-[#2a2d3a] rounded-xl rounded-tr-sm px-3 py-2 space-y-1.5">
-                          {/* Attached images */}
-                          {lastAttachments.filter(a => a.type.startsWith('image/')).length > 0 && (
-                            <div className="flex flex-wrap gap-1.5">
-                              {lastAttachments.filter(a => a.type.startsWith('image/')).map((att, i) => (
-                                <img key={i} src={att.dataUrl} alt={att.name}
-                                  className="max-w-[160px] max-h-[120px] object-cover rounded-lg border border-[#2a2d3a]" />
-                              ))}
+                  {/* ── Chat thread ─────────────────────────────────────── */}
+                  {!briefActive && !showHistory && (
+                    <div className="space-y-3">
+                      {/* Empty state */}
+                      {messages.length === 0 && !loading && !chatError && (
+                        <div className="flex flex-col items-center justify-center py-8 gap-2.5 text-center">
+                          <Image src="/agents/Hogwarts_Cyborg.png" alt="Hogwarts" width={40} height={40}
+                            className="rounded-xl object-cover object-top opacity-40" />
+                          <p className="text-xs text-gray-600 leading-relaxed">
+                            Ask a question or type <span className="text-purple-500 font-mono">/brief</span> for the team briefing.<br />
+                            Paste a Frame.io link with <span className="text-red-400 font-mono">/qc</span> for video QC.<br />
+                            Type <span className="text-amber-400 font-mono">/rr</span> to open the Revenue Rush knowledge base.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Message thread */}
+                      {messages.map(msg => (
+                        <div key={msg.id}>
+                          {msg.role === 'user' ? (
+                            /* User bubble */
+                            <div className="flex justify-end">
+                              <div className="max-w-[88%] bg-[#1a1c2e] border border-[#2a2d3a] rounded-xl rounded-tr-sm px-3 py-2 space-y-1.5">
+                                {msg.attachments && msg.attachments.filter(a => a.type.startsWith('image/')).length > 0 && (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {msg.attachments.filter(a => a.type.startsWith('image/')).map((att, i) => (
+                                      <img key={i} src={att.dataUrl} alt={att.name}
+                                        className="max-w-[160px] max-h-[120px] object-cover rounded-lg border border-[#2a2d3a]" />
+                                    ))}
+                                  </div>
+                                )}
+                                {msg.attachments && msg.attachments.filter(a => !a.type.startsWith('image/')).map((att, i) => (
+                                  <div key={i} className="flex items-center gap-1.5 text-[10px] text-gray-400 bg-[#0d0f1a] rounded px-2 py-1">
+                                    <Paperclip size={9} className="text-gray-600" /> {att.name}
+                                  </div>
+                                ))}
+                                {msg.content && (
+                                  <p className="text-[11px] text-gray-200 leading-relaxed break-words">
+                                    {msg.content.split(/(https?:\/\/[^\s]+)/g).map((part, i) =>
+                                      /^https?:\/\//.test(part)
+                                        ? <a key={i} href={part} target="_blank" rel="noreferrer"
+                                            className="text-purple-400 hover:text-purple-300 underline underline-offset-2 break-all">
+                                            <Link2 size={9} className="inline mr-0.5" />{part}
+                                          </a>
+                                        : part
+                                    )}
+                                  </p>
+                                )}
+                                <p className="text-[9px] text-gray-600 text-right">{msg.timestamp}</p>
+                              </div>
                             </div>
-                          )}
-                          {/* Non-image attachments */}
-                          {lastAttachments.filter(a => !a.type.startsWith('image/')).map((att, i) => (
-                            <div key={i} className="flex items-center gap-1.5 text-[10px] text-gray-400 bg-[#0d0f1a] rounded px-2 py-1">
-                              <Paperclip size={9} className="text-gray-600" /> {att.name}
+                          ) : (
+                            /* Agent bubble */
+                            <div>
+                              <div className="flex items-center gap-1.5 mb-1.5">
+                                <AgentAvatar avatar={msg.agentAvatar!} name={msg.agent!} color={msg.agentColor!} size={22} />
+                                <span className={`text-[10px] font-bold uppercase tracking-wide ${TEXT_MAP[msg.agentColor ?? 'purple'] ?? 'text-purple-300'}`}>{msg.agent}</span>
+                                <span className="text-[8px] text-gray-600 ml-auto font-mono">{msg.timestamp}</span>
+                              </div>
+                              <div className="ml-7 prose prose-invert max-w-none text-xs text-gray-300">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+                                  h1: ({ children }) => <p className="font-bold text-gray-100 mb-1.5 mt-2 text-sm">{children}</p>,
+                                  h2: ({ children }) => <p className="font-bold text-gray-200 mb-1.5 mt-2 text-[13px]">{children}</p>,
+                                  h3: ({ children }) => <p className="font-semibold text-gray-300 mb-1 mt-1.5 text-xs">{children}</p>,
+                                  p:  ({ children }) => <p className="mb-2 leading-relaxed">{children}</p>,
+                                  ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>,
+                                  ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>,
+                                  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                                  strong: ({ children }) => <strong className="font-semibold text-gray-100">{children}</strong>,
+                                  em: ({ children }) => <em className="italic text-gray-400">{children}</em>,
+                                  code: ({ children }) => <code className="bg-[#1e2030] text-purple-300 rounded px-1 py-0.5 font-mono text-[11px]">{children}</code>,
+                                  pre: ({ children }) => <pre className="bg-[#1e2030] rounded p-2 overflow-x-auto text-[11px] font-mono my-2">{children}</pre>,
+                                  hr: () => <hr className="border-[#2a2d3a] my-3" />,
+                                  blockquote: ({ children }) => <blockquote className="border-l-2 border-purple-700 pl-3 text-gray-400 italic my-2">{children}</blockquote>,
+                                }}>{msg.content}</ReactMarkdown>
+                              </div>
                             </div>
-                          ))}
-                          {/* Question text with auto-linked URLs */}
-                          {lastQuestion && (
-                            <p className="text-[11px] text-gray-200 leading-relaxed break-words">
-                              {lastQuestion.split(/(https?:\/\/[^\s]+)/g).map((part, i) =>
-                                /^https?:\/\//.test(part)
-                                  ? <a key={i} href={part} target="_blank" rel="noreferrer"
-                                      className="text-purple-400 hover:text-purple-300 underline underline-offset-2 break-all flex-inline items-center gap-0.5">
-                                      <Link2 size={9} className="inline mr-0.5" />{part}
-                                    </a>
-                                  : part
-                              )}
-                            </p>
                           )}
                         </div>
-                      </div>
-                    )}
-                    {/* Agent response header */}
-                    <div className="flex items-center gap-2 pb-2.5 border-b border-[#1e2030]">
-                      {respondingAvatar && <AgentAvatar avatar={respondingAvatar} name={respondingAgent} color={respondingColor} size={28} />}
-                      <div>
-                        <span className={`font-bold text-[11px] uppercase tracking-wider ${TEXT_MAP[respondingColor] ?? 'text-purple-300'}`}>{respondingAgent}</span>
-                        <span className="text-[10px] text-gray-600 ml-1.5">{AGENTS_DEF.find(a => a.name === respondingAgent)?.role}</span>
-                      </div>
-                      <span className="ml-auto text-[9px] text-blue-400 bg-blue-900/20 border border-blue-800/30 rounded px-1.5 py-0.5">responding</span>
+                      ))}
+
+                      {/* Loading */}
+                      {loading && (
+                        <div className="flex items-center gap-2 pl-1">
+                          <Loader2 size={14} className="animate-spin text-purple-500 opacity-70" />
+                          <p className="text-[11px] text-gray-600">Consulting agents…</p>
+                        </div>
+                      )}
+
+                      {/* Error */}
+                      {chatError && !loading && (
+                        <div className="rounded-lg border border-red-800/40 bg-red-900/20 p-3 text-xs text-red-300">⚠️ {chatError}</div>
+                      )}
                     </div>
-                    <div className="prose prose-invert max-w-none text-xs text-gray-300">
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          h1: ({ children }) => <p className="font-bold text-gray-100 mb-1.5 mt-2 text-sm">{children}</p>,
-                          h2: ({ children }) => <p className="font-bold text-gray-200 mb-1.5 mt-2 text-[13px]">{children}</p>,
-                          h3: ({ children }) => <p className="font-semibold text-gray-300 mb-1 mt-1.5 text-xs">{children}</p>,
-                          p:  ({ children }) => <p className="mb-2 leading-relaxed">{children}</p>,
-                          ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>,
-                          ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>,
-                          li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-                          strong: ({ children }) => <strong className="font-semibold text-gray-100">{children}</strong>,
-                          em: ({ children }) => <em className="italic text-gray-400">{children}</em>,
-                          code: ({ children }) => <code className="bg-[#1e2030] text-purple-300 rounded px-1 py-0.5 font-mono text-[11px]">{children}</code>,
-                          pre: ({ children }) => <pre className="bg-[#1e2030] rounded p-2 overflow-x-auto text-[11px] font-mono my-2">{children}</pre>,
-                          hr: () => <hr className="border-[#2a2d3a] my-3" />,
-                          blockquote: ({ children }) => <blockquote className="border-l-2 border-purple-700 pl-3 text-gray-400 italic my-2">{children}</blockquote>,
-                        }}
-                      >
-                        {answer}
-                      </ReactMarkdown>
-                    </div>
-                  </div>
-                )}
+                  )}
+
+                </div>
               </div>
 
               {/* Activity log */}
@@ -1760,13 +2180,11 @@ export function HogwartsShell() {
 
               {/* Chat input */}
               <div className="flex-shrink-0 space-y-1.5">
-                {/* /qc hint */}
                 {question.trim().toLowerCase().startsWith('/qc') && (
                   <div className="flex items-center px-1">
                     <span className="text-[10px] text-red-400 font-mono">Use the 🎬 QC panel in the sidebar for video QC</span>
                   </div>
                 )}
-                {/* /rr hint */}
                 {question.trim().toLowerCase().startsWith('/rr') && (
                   <div className="flex items-center px-1">
                     <span className="text-[10px] text-amber-400 font-mono">Press Enter to open the 📚 Revenue Rush knowledge base</span>
@@ -1800,30 +2218,19 @@ export function HogwartsShell() {
 
                 {/* Input row */}
                 <div className="flex gap-1.5">
-                  {/* Hidden file input */}
-                  <input
-                    ref={attachInputRef}
-                    type="file"
-                    className="hidden"
-                    accept="image/*,video/*,.pdf,.doc,.docx,.txt"
-                    multiple
+                  <input ref={attachInputRef} type="file" className="hidden"
+                    accept="image/*,video/*,.pdf,.doc,.docx,.txt" multiple
                     onChange={e => {
-                      const files = Array.from(e.target.files ?? [])
-                      files.forEach(file => {
+                      Array.from(e.target.files ?? []).forEach(file => {
                         const reader = new FileReader()
-                        reader.onload = ev => {
-                          setAttachments(a => [...a, {
-                            dataUrl: ev.target?.result as string,
-                            name: file.name,
-                            type: file.type,
-                          }])
-                        }
+                        reader.onload = ev => setAttachments(a => [...a, {
+                          dataUrl: ev.target?.result as string, name: file.name, type: file.type,
+                        }])
                         reader.readAsDataURL(file)
                       })
                       e.target.value = ''
                     }}
                   />
-                  {/* Attach button */}
                   <button
                     onClick={() => attachInputRef.current?.click()}
                     className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-lg bg-[#0d0f1a] border border-[#1e2030] text-gray-600 hover:text-gray-300 hover:border-[#2a2d3a] transition-all"
@@ -1831,7 +2238,6 @@ export function HogwartsShell() {
                   >
                     <Paperclip size={14} />
                   </button>
-                  {/* Text input */}
                   <input
                     id="hw-input"
                     type="text"
@@ -1839,7 +2245,6 @@ export function HogwartsShell() {
                     onChange={e => { setQuestion(e.target.value); if (!e.target.value.startsWith('@')) setActiveAgent(null) }}
                     onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask() } }}
                     onPaste={e => {
-                      // Handle image paste from clipboard
                       const items = Array.from(e.clipboardData.items)
                       const imgItem = items.find(it => it.type.startsWith('image/'))
                       if (imgItem) {
@@ -1848,9 +2253,7 @@ export function HogwartsShell() {
                         if (!file) return
                         const reader = new FileReader()
                         reader.onload = ev => setAttachments(a => [...a, {
-                          dataUrl: ev.target?.result as string,
-                          name: 'pasted-image.png',
-                          type: 'image/png',
+                          dataUrl: ev.target?.result as string, name: 'pasted-image.png', type: 'image/png',
                         }])
                         reader.readAsDataURL(file)
                       }
@@ -1858,7 +2261,6 @@ export function HogwartsShell() {
                     placeholder="@mention, ask anything, paste an image, /brief, /qc, /rr…"
                     className="flex-1 bg-[#07080e] border border-[#1e2030] rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-700 focus:outline-none focus:border-purple-700/60 transition-colors"
                   />
-                  {/* Send button */}
                   <button
                     onClick={ask}
                     disabled={(!question.trim() && attachments.length === 0) || loading}

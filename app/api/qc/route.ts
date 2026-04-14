@@ -33,9 +33,10 @@ async function scrapeOgMeta(url: string): Promise<OGMeta> {
     return m?.[1] ?? ''
   }
 
+  const rawThumb = getMeta('og:image') || getMeta('twitter:image') || null
   return {
     title:    getMeta('og:title') || getMeta('twitter:title') || 'Untitled',
-    thumbUrl: getMeta('og:image') || getMeta('twitter:image') || null,
+    thumbUrl: rawThumb ? decodeHtmlEntities(rawThumb) : null,
     description: getMeta('og:description') || getMeta('twitter:description') || '',
   }
 }
@@ -89,6 +90,16 @@ function parseFrameioUrl(url: string): { type: 'review' | 'asset'; id: string } 
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Decode HTML entities that appear in OG-scraped URLs (e.g. &amp; → &) */
+function decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+}
 
 function formatDuration(s: number) {
   if (!s) return 'unknown'
@@ -193,6 +204,9 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 4. Visual QC — GPT-4o Vision on thumbnail ─────────────────────────
+    // Decode HTML entities in the URL (OG-scraped URLs often contain &amp; etc.)
+    if (thumbUrl) thumbUrl = decodeHtmlEntities(thumbUrl)
+
     let visualSection = '_No thumbnail available for visual analysis._'
     if (thumbUrl) {
       const visionRes = await openai.chat.completions.create({
