@@ -89,6 +89,115 @@ function SettingToggle({ label, sub, defaultOn = false, disabled = false }: { la
   )
 }
 
+// ─── Saved Prompts inline picker (used inside the chat input) ────────────────
+
+const AGENT_NAMES = ['DUMBLEDORE','HERMIONE','HARRY','RON','McGONAGALL','SNAPE','HAGRID',
+  'LUNA','GINNY','NEVILLE','DRACO','SIRIUS','LUPIN','FRED','GEORGE','FLEUR',
+  'MOODY','TRELAWNEY','DOBBY','ARTHUR','TONKS','KINGSLEY']
+
+interface SavedPrompt { id: string; agent: string; label: string; prompt: string }
+
+function SavedPromptsPickerInline({ onSelect, onClose }: { onSelect: (text: string) => void; onClose: () => void }) {
+  const [prompts, setPrompts] = useState<SavedPrompt[]>([])
+  const [newLabel, setNewLabel] = useState('')
+  const [newPrompt, setNewPrompt] = useState('')
+  const [newAgent, setNewAgent] = useState('DUMBLEDORE')
+  const [showAdd, setShowAdd] = useState(false)
+  const [filter, setFilter] = useState('')
+
+  useEffect(() => {
+    try { const s = localStorage.getItem('hw-saved-prompts'); if (s) setPrompts(JSON.parse(s)) } catch {}
+  }, [])
+
+  function save(p: SavedPrompt[]) {
+    setPrompts(p)
+    try { localStorage.setItem('hw-saved-prompts', JSON.stringify(p)) } catch {}
+  }
+
+  function addPrompt() {
+    if (!newLabel.trim() || !newPrompt.trim()) return
+    const np = [...prompts, { id: Date.now().toString(36), agent: newAgent, label: newLabel.trim(), prompt: newPrompt.trim() }]
+    save(np)
+    setNewLabel(''); setNewPrompt(''); setShowAdd(false)
+  }
+
+  const filtered = filter
+    ? prompts.filter(p => p.label.toLowerCase().includes(filter.toLowerCase()) || p.agent.toLowerCase().includes(filter.toLowerCase()))
+    : prompts
+
+  return (
+    <div className="relative mb-1">
+      <div className="absolute bottom-full left-0 right-0 mb-1 z-50 bg-[#0d0f1a] border border-[#2a2d3a] rounded-xl shadow-2xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-3 py-2 border-b border-[#1e2030]">
+          <span className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+            <BookMarked size={10} /> Saved Prompts
+          </span>
+          <div className="flex items-center gap-1">
+            <button onClick={() => setShowAdd(p => !p)}
+              className="text-[9px] text-gray-500 hover:text-gray-300 border border-[#2a2d3a] rounded px-1.5 py-0.5 transition-colors">
+              + Add
+            </button>
+            <button onClick={onClose} className="text-gray-600 hover:text-gray-300 transition-colors p-0.5">
+              <XIcon size={11} />
+            </button>
+          </div>
+        </div>
+
+        {/* Add form */}
+        {showAdd && (
+          <div className="px-3 py-2 border-b border-[#1e2030] space-y-1.5">
+            <div className="flex gap-1.5">
+              <select value={newAgent} onChange={e => setNewAgent(e.target.value)}
+                className="bg-[#07080e] border border-[#1e2030] rounded px-2 py-1 text-[10px] text-gray-300 focus:outline-none">
+                {AGENT_NAMES.map(a => <option key={a} value={a}>{a === 'McGONAGALL' ? 'McGON.' : a.slice(0,8)}</option>)}
+              </select>
+              <input value={newLabel} onChange={e => setNewLabel(e.target.value)} placeholder="Label…"
+                className="flex-1 bg-[#07080e] border border-[#1e2030] rounded px-2 py-1 text-[10px] text-gray-300 placeholder-gray-700 focus:outline-none" />
+            </div>
+            <textarea value={newPrompt} onChange={e => setNewPrompt(e.target.value)} rows={2} placeholder="Prompt text…"
+              className="w-full bg-[#07080e] border border-[#1e2030] rounded px-2 py-1 text-[10px] text-gray-300 placeholder-gray-700 focus:outline-none resize-none" />
+            <button onClick={addPrompt}
+              className="w-full text-[9px] py-1 rounded bg-amber-900/30 border border-amber-700/40 text-amber-300 hover:bg-amber-900/50 transition-colors">
+              Save prompt
+            </button>
+          </div>
+        )}
+
+        {/* Search */}
+        {prompts.length > 3 && (
+          <div className="px-3 py-1.5 border-b border-[#1e2030]">
+            <input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Search prompts…"
+              className="w-full bg-transparent text-[10px] text-gray-300 placeholder-gray-600 focus:outline-none" />
+          </div>
+        )}
+
+        {/* Prompt list */}
+        <div className="max-h-48 overflow-y-auto [&::-webkit-scrollbar]:w-[2px] [&::-webkit-scrollbar-thumb]:bg-[#2a2d3a]">
+          {filtered.length === 0 && (
+            <p className="text-[10px] text-gray-600 text-center py-4">
+              {prompts.length === 0 ? 'No saved prompts yet. Click + Add to create one.' : 'No matches.'}
+            </p>
+          )}
+          {filtered.map(p => (
+            <div key={p.id} className="flex items-center gap-2 px-3 py-2 hover:bg-[#141824] border-b border-[#1e2030]/60 last:border-0 group">
+              <button onClick={() => onSelect(`@${p.agent.toLowerCase()} ${p.prompt}`)}
+                className="flex-1 text-left min-w-0">
+                <p className="text-[10px] font-medium text-gray-300 truncate">{p.label}</p>
+                <p className="text-[9px] text-gray-600 truncate">{p.agent} · {p.prompt.slice(0, 50)}{p.prompt.length > 50 ? '…' : ''}</p>
+              </button>
+              <button onClick={() => save(prompts.filter(x => x.id !== p.id))}
+                className="opacity-0 group-hover:opacity-100 text-gray-700 hover:text-red-400 transition-all p-0.5">
+                <XIcon size={9} />
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Left toolbar ─────────────────────────────────────────────────────────────
 
 function LeftToolbar({ active, setActive }: { active: string; setActive: (k: string) => void }) {
@@ -100,7 +209,6 @@ function LeftToolbar({ active, setActive }: { active: string; setActive: (k: str
     { key: 'collaborate',  icon: Users,        label: 'Collaborate' },
     null,
     { key: 'quick',        icon: Zap,          label: 'Quick Actions' },
-    { key: 'saved',        icon: BookMarked,   label: 'Saved Prompts' },
     { key: 'batch-hooks',  icon: Fish,         label: 'Batch Hooks' },
     { key: 'calendar',     icon: Calendar,     label: 'Content Calendar' },
     null,
@@ -112,7 +220,6 @@ function LeftToolbar({ active, setActive }: { active: string; setActive: (k: str
     { key: 'knowledge',   icon: BookOpen,     label: 'Knowledge Base' },
     { key: 'memory',      icon: Brain,        label: 'Agent Memory' },
     { key: 'stats',       icon: BarChart,     label: 'Agent Stats' },
-    { key: 'youtube',     icon: PlayCircle,   label: 'YouTube Analytics' },
     { key: 'brief-sched', icon: Clock,        label: 'Scheduled Brief' },
     null,
     { key: 'env',         icon: Globe,        label: 'Environment' },
@@ -250,6 +357,7 @@ function MiniCharacter({ agent, isWalking, facingLeft, onClick, highlighted, pos
         <div style={{
           transform: facingLeft ? 'scaleX(-1)' : 'scaleX(1)', transition: 'transform 0.12s',
           filter: agent.status === 'away' ? 'grayscale(1) opacity(0.45)' : glow,
+          ['--blink-offset' as string]: `${BLINK_OFFSET[agent.name] ?? 0}s`,
         }}>
           {CharSVG && <CharSVG avatar={agent.avatar} isWalking={isWalking} status={agent.status} />}
         </div>
@@ -289,6 +397,16 @@ function TrackedCharacter({ agent, isMoving, onClick, highlighted, posOverride }
   return <MiniCharacter agent={agent} isWalking={isMoving} facingLeft={facingLeft} onClick={onClick} highlighted={highlighted} posOverride={posOverride} />
 }
 
+
+// ─── Per-agent blink offset (so each agent blinks at a different time) ───────
+const BLINK_OFFSET: Record<string, number> = {
+  DUMBLEDORE: 0.0,  HERMIONE:  0.7,  HARRY:     1.4,  RON:       2.1,
+  McGONAGALL: 2.8,  SNAPE:     0.3,  HAGRID:    1.0,  LUNA:      1.7,
+  GINNY:      2.4,  NEVILLE:   3.1,  DRACO:     0.5,  SIRIUS:    1.2,
+  LUPIN:      1.9,  FRED:      2.6,  GEORGE:    3.3,  FLEUR:     0.2,
+  MOODY:      0.9,  TRELAWNEY: 1.6,  DOBBY:     2.3,  ARTHUR:    3.0,
+  TONKS:      0.4,  KINGSLEY:  1.1,
+}
 
 // ─── Shell ────────────────────────────────────────────────────────────────────
 
@@ -353,6 +471,9 @@ export function HogwartsShell() {
 
   // ── Saved-to-Notion state (per message) ─────────────────────────────
   const [savedMsgIds, setSavedMsgIds] = useState<Set<string>>(new Set())
+
+  // ── Saved prompts picker state ────────────────────────────────────────
+  const [showSavedPicker, setShowSavedPicker] = useState(false)
 
   // ── Toolbar order state ──────────────────────────────────────────────────
   const DEFAULT_TOOL_ORDER = ['office', 'agents', 'chat', 'qc', 'knowledge', 'env', 'layout', 'activity', 'notifications', 'settings']
@@ -935,15 +1056,6 @@ export function HogwartsShell() {
               </PanelErrorBoundary>
             )}
 
-            {/* ── Saved Prompts Panel ───────────────────────────────────────── */}
-            {activeTool === 'saved' && (
-              <PanelErrorBoundary panelName="Saved Prompts">
-                <div className="flex-1 overflow-hidden flex flex-col h-full">
-                  <SavedPromptsPanel onAction={firePrompt} />
-                </div>
-              </PanelErrorBoundary>
-            )}
-
             {/* ── Batch Hook Generator Panel ────────────────────────────────── */}
             {activeTool === 'batch-hooks' && (
               <PanelErrorBoundary panelName="Batch Hook Generator">
@@ -967,15 +1079,6 @@ export function HogwartsShell() {
               <PanelErrorBoundary panelName="Agent Stats">
                 <div className="flex-1 overflow-hidden flex flex-col h-full">
                   <AgentStatsPanel />
-                </div>
-              </PanelErrorBoundary>
-            )}
-
-            {/* ── YouTube Analytics Panel ───────────────────────────────────── */}
-            {activeTool === 'youtube' && (
-              <PanelErrorBoundary panelName="YouTube Analytics">
-                <div className="flex-1 overflow-hidden flex flex-col h-full">
-                  <YouTubePanel />
                 </div>
               </PanelErrorBoundary>
             )}
@@ -1588,7 +1691,7 @@ export function HogwartsShell() {
                   pushLog(`${agentName} moved to ${ROOMS[newRoom].label}.`, 'move')
                 }
               }}
-              className={`flex-1 min-w-0 relative rounded-xl overflow-hidden border-2 border-[#1a0e06] ${['qc','agents','activity','env','layout','settings','chat','knowledge','gfx','product','memory','inbox','collaborate','quick','saved','batch-hooks','calendar','stats','youtube','brief-sched','frameio'].includes(activeTool) ? 'hidden' : ''}`}
+              className={`flex-1 min-w-0 relative rounded-xl overflow-hidden border-2 border-[#1a0e06] ${['qc','agents','activity','env','layout','settings','chat','knowledge','gfx','product','memory','inbox','collaborate','quick','batch-hooks','calendar','stats','brief-sched','frameio'].includes(activeTool) ? 'hidden' : ''}`}
               style={{
                 background: '#8b5c30',
                 backgroundImage: [
@@ -2029,6 +2132,14 @@ export function HogwartsShell() {
                   </div>
                 )}
 
+                {/* Saved prompts floating picker */}
+                {showSavedPicker && (
+                  <SavedPromptsPickerInline
+                    onSelect={p => { setQuestion(p); setShowSavedPicker(false); setTimeout(() => document.getElementById('hw-input')?.focus(), 50) }}
+                    onClose={() => setShowSavedPicker(false)}
+                  />
+                )}
+
                 {/* Input row */}
                 <div className="flex gap-1.5">
                   <input ref={attachInputRef} type="file" className="hidden"
@@ -2081,6 +2192,13 @@ export function HogwartsShell() {
                           {isListening ? <MicOff size={13} /> : <Mic size={13} />}
                         </button>
                       )}
+                      <button
+                        onClick={() => setShowSavedPicker(p => !p)}
+                        className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${showSavedPicker ? 'text-amber-400' : 'text-gray-600 hover:text-amber-400'}`}
+                        title="Saved prompts"
+                      >
+                        <BookMarked size={13} />
+                      </button>
                       <button
                         onClick={() => { setPromptBuilderOpen(true); setPromptBuilderResult(''); setPromptBuilderInput('') }}
                         className="w-6 h-6 flex items-center justify-center rounded text-gray-600 hover:text-purple-400 transition-colors"

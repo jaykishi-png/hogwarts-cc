@@ -72,9 +72,11 @@ body {
   75%      { transform: rotate(-1.5deg);}
 }
 
+/* Both eyes blink in perfect sync; each agent gets a unique --blink-offset
+   injected via inline style so they blink at different moments */
 .eyelid   { transform-box: fill-box; transform-origin: top center; }
-.eyelid-l { animation: blink    4.2s ease-in-out infinite;        }
-.eyelid-r { animation: blink    4.2s ease-in-out infinite 0.08s;  }
+.eyelid-l,
+.eyelid-r { animation: blink 4.2s ease-in-out infinite; animation-delay: var(--blink-offset, 0s); }
 .pupils   { animation: look-side 5.5s ease-in-out infinite;      }
 .head-bob { animation: head-idle 4s   ease-in-out infinite;      }
 .mouth-talking {
