@@ -53,7 +53,12 @@ For EACH frame, check:
 
 **2. EXPOSURE ISSUES** — clipping, crush, overexposure, underexposure.
 
-**3. COLOR GRADING** — unnatural skin tones, color cast, inconsistency vs adjacent frames.
+**3. COLOR GRADING** — Flag any of these specific issues:
+   - **COLOR SHIFT:** The overall color temperature or tint changes noticeably between consecutive frames (e.g., shot goes warmer/cooler, green/magenta tint appears or disappears mid-scene). Describe exactly what shifted and between which frames.
+   - **FLAT / UNGRADED:** Image looks washed out, low contrast, desaturated, or "milky" — as if the footage is still in a flat/log/RAW profile and was never color graded. Highlights look grey instead of white, blacks look lifted, colors look muted with no punch.
+   - **COLOR DROP:** Color saturation suddenly drops or disappears within a frame or between consecutive frames — image goes partially or fully desaturated, grey, or monochrome unexpectedly.
+   - **UNNATURAL SKIN TONES:** Skin appears overly orange, red, green, or grey.
+   - **COLOR CAST:** Unwanted dominant tint (e.g., heavy blue cast in shadows, green cast on skin).
 
 **4. FRAMING / COMPOSITION** — cut-off subjects, awkward headroom, horizon tilt.
 

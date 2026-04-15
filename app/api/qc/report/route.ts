@@ -133,13 +133,22 @@ Use this exact structure. Every ⚠️ issue MUST have [TC: HH:MM:SS:FF]. Every 
 ---
 
 ## Visual
-[Summarise visual findings grouped by type: Typos, Exposure, Color, Framing, Artifacts, Jump Cuts. Every issue: ⚠️ [TC: HH:MM:SS:FF] description. If clean: "✅ No visual issues detected."]
+[Summarise visual findings grouped by type: Typos, Exposure, Framing, Artifacts, Jump Cuts. Every issue: ⚠️ [TC: HH:MM:SS:FF] description. If clean: "✅ No visual issues detected."]
+
+## Color
+[Dedicated color grading section. List every color issue found, grouped into these sub-categories if present:
+- **Color Shift** — inconsistent color temperature or tint between shots
+- **Flat / Ungraded** — footage appears to be in log/RAW profile, ungraded, washed out
+- **Color Drop** — saturation suddenly drops, image goes grey or desaturated
+- **Skin Tones** — unnatural skin color
+- **Color Cast** — unwanted tint
+Every issue: ⚠️ [TC: HH:MM:SS:FF] description. If no color issues: "✅ Color grading consistent throughout."]
 
 ## Audio
 [Summarise audio editing findings. Every issue: ⚠️ [TC: HH:MM:SS:FF] description. If clean: "✅ No audio editing mistakes detected."]
 
 ## Recommended Actions
-- [TC: HH:MM:SS:FF] — [specific fix for that timecode]
+- [TC: HH:MM:SS:FF] — [specific fix for that timecode. For color issues be explicit: e.g. "Re-grade shot — footage appears ungraded/flat", "Match color temperature to adjacent shot", "Saturation drops at this cut — check grade on clip"]
 (If no issues: "No actions required — file is ready for delivery.")
 
 ---
