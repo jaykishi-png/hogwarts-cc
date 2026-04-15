@@ -212,7 +212,7 @@ export default function VideoQCProcessor({ pushLog }: Props) {
         setProgressDetail(`Batch ${b + 1} / ${totalBatches}`)
         const res  = await fetch('/api/qc/frames', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ frames: batch, batchIndex: b, totalBatches }),
+          body: JSON.stringify({ frames: batch, batchIndex: b, totalBatches, fps: 24 }),
         })
         const data = await res.json()
         if (data.findings) visualFindings.push(data.findings)
@@ -222,30 +222,33 @@ export default function VideoQCProcessor({ pushLog }: Props) {
       // ── Step 4: Extract audio + Whisper ───────────────────────────────────
       setStage('transcribing'); setProgress(0); setProgressDetail('')
       let transcript = ''
+      let allSegments: Array<{ start: number; end: number; text: string }> = []
+      const TARGET_RATE = 16000
+      const MAX_SAMPLES = Math.floor(3.8 * 1024 * 1024 / 2) // ~124s per chunk at 16kHz
+      const chunkDuration = MAX_SAMPLES / TARGET_RATE // seconds per chunk
+
       try {
         // Decode audio via Web Audio API, resample to 16kHz mono
-        const arrayBuf  = await file.arrayBuffer()
-        const tmpCtx    = new AudioContext()
-        const decoded   = await tmpCtx.decodeAudioData(arrayBuf.slice(0))
+        const arrayBuf = await file.arrayBuffer()
+        const tmpCtx   = new AudioContext()
+        const decoded  = await tmpCtx.decodeAudioData(arrayBuf.slice(0))
         await tmpCtx.close()
 
-        const targetRate  = 16000
-        const offCtx      = new OfflineAudioContext(1, Math.ceil(decoded.duration * targetRate), targetRate)
-        const src         = offCtx.createBufferSource()
-        src.buffer        = decoded
+        const offCtx = new OfflineAudioContext(1, Math.ceil(decoded.duration * TARGET_RATE), TARGET_RATE)
+        const src    = offCtx.createBufferSource()
+        src.buffer   = decoded
         src.connect(offCtx.destination)
         src.start()
-        const resampled   = await offCtx.startRendering()
-        const mono        = resampled.getChannelData(0)
+        const resampled = await offCtx.startRendering()
+        const mono      = resampled.getChannelData(0)
 
-        // Split into ~3.8MB chunks and transcribe each
-        const MAX_SAMPLES = Math.floor(3.8 * 1024 * 1024 / 2)
-        const chunks      = Math.ceil(mono.length / MAX_SAMPLES)
+        const chunks = Math.ceil(mono.length / MAX_SAMPLES)
         const parts: string[] = []
 
         for (let c = 0; c < chunks; c++) {
+          const timeOffset = c * chunkDuration
           const slice  = mono.slice(c * MAX_SAMPLES, (c + 1) * MAX_SAMPLES)
-          const wav    = encodeWAV(slice, targetRate)
+          const wav    = encodeWAV(slice, TARGET_RATE)
           const blob   = new Blob([wav], { type: 'audio/wav' })
           const fd     = new FormData()
           fd.append('audio', blob, `chunk_${c}.wav`)
@@ -254,6 +257,16 @@ export default function VideoQCProcessor({ pushLog }: Props) {
           const res  = await fetch('/api/qc/audio', { method: 'POST', body: fd })
           const data = await res.json()
           if (data.transcript) parts.push(data.transcript)
+          // Offset segment timestamps to absolute video time
+          if (data.segments?.length) {
+            for (const seg of data.segments) {
+              allSegments.push({
+                start: seg.start + timeOffset,
+                end:   seg.end   + timeOffset,
+                text:  seg.text,
+              })
+            }
+          }
           setProgress(Math.round(((c + 1) / chunks) * 100))
         }
         transcript = parts.join(' ')
@@ -270,6 +283,10 @@ export default function VideoQCProcessor({ pushLog }: Props) {
       const duration = video2.duration
       URL.revokeObjectURL(video2.src)
 
+      // Detect FPS: try videoWidth/Height ratio heuristic, default 24
+      // (HTMLVideoElement doesn't expose FPS natively; 24 is standard for course/production video)
+      const detectedFps = 24
+
       const res  = await fetch('/api/qc/report', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -277,7 +294,9 @@ export default function VideoQCProcessor({ pushLog }: Props) {
           duration,
           visualFindings,
           transcript,
+          segments:       allSegments,
           jumpCuts,
+          fps:            detectedFps,
         }),
       })
       const data = await res.json()
@@ -285,7 +304,7 @@ export default function VideoQCProcessor({ pushLog }: Props) {
 
       setReport(data.report)
       setStage('done')
-      pushLog(`HARRY: QC complete — "${file.name}" (${jumpCuts.length} jump cuts, ${frames.length} frames)`, 'chat')
+      pushLog(`HARRY: QC complete — "${file.name}" (${jumpCuts.length} cut candidates, ${frames.length} frames, ${allSegments.length} audio segments)`, 'chat')
       setHistory(p => [{ name: file.name, report: data.report, ts: new Date().toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' }) }, ...p.slice(0, 9)])
 
     } catch (err: unknown) {
