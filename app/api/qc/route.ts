@@ -235,7 +235,7 @@ export async function POST(req: NextRequest) {
 
 For each frame (label them Frame 1, Frame 2, etc.):
 
-**1. JUMP CUT DETECTION** — Compare consecutive frames. Flag if: subject position changes abruptly, background is inconsistent, lighting changes suddenly, subject appearance changes (different outfit/hair). These indicate a jump cut.
+**1. JUMP CUT DETECTION** — Compare consecutive frames for true jump cuts ONLY. A jump cut is an abrupt edit between two shots of the same subject from nearly the same camera angle, creating a jarring "jump" in time. Do NOT flag intentional transitions (cuts to a different scene, cutaway shots, b-roll, cross-cuts, dissolves, wipes, or any edit where the camera angle or subject clearly changes). Only flag as a jump cut if ALL of these apply: (a) same subject appears in both frames, (b) the camera angle is nearly identical (less than ~30° of difference — the "30-degree rule"), (c) the framing/frame size is similar (less than ~30% change — the "30% rule"), AND (d) the edit creates a jarring, unintentional visual stutter. Also flag: lighting changes that are inconsistent within the same shot, subject appearance changes mid-scene (different outfit/hair between what should be the same continuous take).
 
 **2. ON-SCREEN TEXT** — Typos, wrong fonts, misalignment, readability issues, text too close to frame edge (safe zones). Be precise about what text is visible.
 
