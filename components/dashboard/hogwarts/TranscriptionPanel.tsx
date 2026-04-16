@@ -1,16 +1,16 @@
 'use client'
 
-import { useState, useRef, useCallback, useId } from 'react'
+import { useState, useRef, useCallback, useId, useEffect } from 'react'
 import {
   Mic, Upload, Check, Loader2, X, FileText, FileCode,
   Download, BookOpen, ExternalLink, FolderOpen, ChevronDown, Eye, EyeOff,
+  History, ChevronRight, Trash2, Plus, Settings, Save,
 } from 'lucide-react'
-import { TRANSCRIPT_TEMPLATES } from '@/config/transcript-templates'
+import { TRANSCRIPT_TEMPLATES, TranscriptTemplate } from '@/config/transcript-templates'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 interface Segment { start: number; end: number; text: string }
-
 type TxStatus  = 'pending' | 'transcribing' | 'done' | 'error'
 type DocStatus = 'pending' | 'creating'     | 'done' | 'error'
 
@@ -33,10 +33,51 @@ interface BatchItem {
 }
 
 type PanelStage = 'idle' | 'queued' | 'transcribing' | 'metadata' | 'creating' | 'done'
+type PanelView  = 'batch' | 'history' | 'templates'
+
+// ─── History types ───────────────────────────────────────────────────────────
+
+interface HistoryDoc {
+  docTitle:    string
+  docUrl:      string
+  fileName:    string
+  moduleNum:   string
+  lessonNum:   string
+  lessonTitle: string
+}
+interface BatchHistoryEntry {
+  id:           string
+  createdAt:    string
+  templateKey:  string
+  courseTitle:  string
+  courseLevel:  string
+  folderUrl:    string
+  folderName:   string
+  docs:         HistoryDoc[]
+  totalFiles:   number
+  successCount: number
+}
+
+// ─── localStorage helpers ─────────────────────────────────────────────────────
+
+const HISTORY_KEY   = 'transcription_history'
+const TEMPLATES_KEY = 'transcription_custom_templates'
+const MAX_HISTORY   = 50
+
+function readLS<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback
+  try { return JSON.parse(localStorage.getItem(key) ?? 'null') ?? fallback }
+  catch { return fallback }
+}
+function writeLS(key: string, value: unknown) {
+  localStorage.setItem(key, JSON.stringify(value))
+}
+
+// ─── Props ────────────────────────────────────────────────────────────────────
 
 interface Props { pushLog: (msg: string, type: 'chat' | 'move' | 'status' | 'meeting') => void }
 
-// ─── WAV encoder ────────────────────────────────────────────────────────────
+// ─── WAV encoder ─────────────────────────────────────────────────────────────
 
 function encodeWAV(samples: Float32Array, sampleRate: number): ArrayBuffer {
   const buf  = new ArrayBuffer(44 + samples.length * 2)
@@ -56,38 +97,33 @@ function encodeWAV(samples: Float32Array, sampleRate: number): ArrayBuffer {
   return buf
 }
 
-// ─── SRT / VTT / download helpers ───────────────────────────────────────────
+// ─── Subtitle helpers ─────────────────────────────────────────────────────────
 
 function padT(n: number) { return n.toString().padStart(2, '0') }
 function toSRTTime(s: number): string {
   const ms = Math.floor((s % 1) * 1000)
-  const ss = Math.floor(s) % 60
-  const mm = Math.floor(s / 60) % 60
-  const hh = Math.floor(s / 3600)
-  return `${padT(hh)}:${padT(mm)}:${padT(ss)},${ms.toString().padStart(3, '0')}`
+  return `${padT(Math.floor(s / 3600))}:${padT(Math.floor(s / 60) % 60)}:${padT(Math.floor(s) % 60)},${ms.toString().padStart(3, '0')}`
 }
-function generateSRT(segs: Segment[]): string {
-  return segs.filter(s => s.text.trim())
-    .map((s, i) => `${i + 1}\n${toSRTTime(s.start)} --> ${toSRTTime(s.end)}\n${s.text.trim()}`)
-    .join('\n\n')
+function generateSRT(segs: Segment[]) {
+  return segs.filter(s => s.text.trim()).map((s, i) =>
+    `${i + 1}\n${toSRTTime(s.start)} --> ${toSRTTime(s.end)}\n${s.text.trim()}`).join('\n\n')
 }
-function generateVTT(segs: Segment[]): string {
+function generateVTT(segs: Segment[]) {
   const t = (s: number) => toSRTTime(s).replace(',', '.')
-  return 'WEBVTT\n\n' + segs.filter(s => s.text.trim())
-    .map((s, i) => `${i + 1}\n${t(s.start)} --> ${t(s.end)}\n${s.text.trim()}`)
-    .join('\n\n')
+  return 'WEBVTT\n\n' + segs.filter(s => s.text.trim()).map((s, i) =>
+    `${i + 1}\n${t(s.start)} --> ${t(s.end)}\n${s.text.trim()}`).join('\n\n')
 }
-function downloadText(content: string, filename: string, mime: string) {
+function dlText(content: string, filename: string, mime: string) {
   const a = document.createElement('a')
   a.href = URL.createObjectURL(new Blob([content], { type: mime }))
   a.download = filename; a.click(); URL.revokeObjectURL(a.href)
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Misc helpers ─────────────────────────────────────────────────────────────
 
-const pad2 = (n: string) => n.trim().padStart(2, '0')
+const pad2      = (n: string) => n.trim().padStart(2, '0')
 const wordCount = (t: string) => t.trim() ? t.trim().split(/\s+/).length : 0
-const baseName  = (f: File) => f.name.replace(/\.[^/.]+$/, '')
+const baseName  = (f: File)   => f.name.replace(/\.[^/.]+$/, '')
 const truncate  = (s: string, n = 30) => s.length > n ? s.slice(0, n - 1) + '…' : s
 
 function makeItem(file: File, lessonIdx: number): BatchItem {
@@ -100,30 +136,52 @@ function makeItem(file: File, lessonIdx: number): BatchItem {
   }
 }
 
-// ─── Preview URL ──────────────────────────────────────────────────────────────
-// Converts /edit URL → /preview for iframe embedding
-function previewUrl(editUrl: string) {
-  return editUrl.replace('/edit', '/preview')
+function fmtDate(iso: string) {
+  const d = new Date(iso)
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
+    ' · ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
-// ─── Component ───────────────────────────────────────────────────────────────
+function previewUrl(editUrl: string) { return editUrl.replace('/edit', '/preview') }
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function TranscriptionPanel({ pushLog }: Props) {
   const uid = useId()
   const fileInput = useRef<HTMLInputElement>(null)
 
+  // ── Batch state ────────────────────────────────────────────────────────────
   const [items,       setItems]       = useState<BatchItem[]>([])
   const [panelStage,  setPanelStage]  = useState<PanelStage>('idle')
-  const [templateKey,  setTemplateKey]  = useState(TRANSCRIPT_TEMPLATES[0].key)
-  const [courseTitle,  setCourseTitle]  = useState(TRANSCRIPT_TEMPLATES[0].courseTitle)
-  const [courseLevel,  setCourseLevel]  = useState('')
+  const [templateKey, setTemplateKey] = useState(TRANSCRIPT_TEMPLATES[0].key)
+  const [courseTitle, setCourseTitle] = useState(TRANSCRIPT_TEMPLATES[0].courseTitle)
+  const [courseLevel, setCourseLevel] = useState('')
   const [folderUrl,   setFolderUrl]   = useState('')
   const [folderName,  setFolderName]  = useState('')
   const [globalError, setGlobalError] = useState('')
 
-  // Preview modal state
-  const [previewItem, setPreviewItem] = useState<BatchItem | null>(null)
+  // ── View / preview ─────────────────────────────────────────────────────────
+  const [view,       setView]       = useState<PanelView>('batch')
+  const [previewDoc, setPreviewDoc] = useState<{ url: string; title: string } | null>(null)
 
+  // ── History ────────────────────────────────────────────────────────────────
+  const [history,     setHistory]     = useState<BatchHistoryEntry[]>([])
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+
+  // ── Custom templates ───────────────────────────────────────────────────────
+  const [customTemplates, setCustomTemplates] = useState<TranscriptTemplate[]>([])
+  const [newTpl, setNewTpl] = useState({ key: '', label: '', courseTitle: '', templateId: '' })
+  const [tplError, setTplError] = useState('')
+
+  // Load from localStorage on mount
+  useEffect(() => {
+    setHistory(readLS<BatchHistoryEntry[]>(HISTORY_KEY, []))
+    setCustomTemplates(readLS<TranscriptTemplate[]>(TEMPLATES_KEY, []))
+  }, [])
+
+  // All available templates = static + custom
+  const allTemplates: TranscriptTemplate[] = [...TRANSCRIPT_TEMPLATES, ...customTemplates]
+  const selectedTemplate = allTemplates.find(t => t.key === templateKey)
   const isLocked = panelStage === 'creating' || panelStage === 'done'
 
   // ── Item updater ───────────────────────────────────────────────────────────
@@ -138,13 +196,10 @@ export function TranscriptionPanel({ pushLog }: Props) {
       /\.(mp4|mov|avi|mkv|webm|mp3|m4a|wav|aac)$/i.test(f.name)
     )
     if (!valid.length) return
-    setItems(prev => {
-      const base = prev.length
-      const newItems = valid.map((f, i) => makeItem(f, base + i))
-      return [...prev, ...newItems]
-    })
+    setItems(prev => [...prev, ...valid.map((f, i) => makeItem(f, prev.length + i))])
     setPanelStage('queued')
     setGlobalError('')
+    setView('batch')
   }, [])
 
   const removeItem = useCallback((id: string) => {
@@ -155,19 +210,17 @@ export function TranscriptionPanel({ pushLog }: Props) {
     })
   }, [])
 
-  // ── onDrop ─────────────────────────────────────────────────────────────────
   const onDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    addFiles(Array.from(e.dataTransfer.files))
+    e.preventDefault(); addFiles(Array.from(e.dataTransfer.files))
   }, [addFiles])
 
   // ── transcribeItem ─────────────────────────────────────────────────────────
   const transcribeItem = useCallback(async (item: BatchItem) => {
     updateItem(item.id, { txStatus: 'transcribing', txProgress: 0, txChunk: '', txError: '' })
     try {
-      const TARGET_RATE   = 16000
-      const MAX_SAMPLES   = Math.floor(3.8 * 1024 * 1024 / 2)
-      const chunkDuration = MAX_SAMPLES / TARGET_RATE
+      const TARGET_RATE = 16000
+      const MAX_SAMPLES = Math.floor(3.8 * 1024 * 1024 / 2)
+      const chunkDur    = MAX_SAMPLES / TARGET_RATE
 
       const arrayBuf = await item.file.arrayBuffer()
       const tmpCtx   = new AudioContext()
@@ -177,34 +230,27 @@ export function TranscriptionPanel({ pushLog }: Props) {
       const offCtx = new OfflineAudioContext(1, Math.ceil(decoded.duration * TARGET_RATE), TARGET_RATE)
       const src    = offCtx.createBufferSource()
       src.buffer   = decoded; src.connect(offCtx.destination); src.start()
-      const resampled = await offCtx.startRendering()
-      const mono      = resampled.getChannelData(0)
+      const mono   = (await offCtx.startRendering()).getChannelData(0)
 
-      const chunks   = Math.ceil(mono.length / MAX_SAMPLES)
-      const parts:   string[]  = []
-      const allSegs: Segment[] = []
+      const chunks = Math.ceil(mono.length / MAX_SAMPLES)
+      const parts: string[] = []; const allSegs: Segment[] = []
 
       for (let c = 0; c < chunks; c++) {
-        const timeOffset = c * chunkDuration
-        const slice      = mono.slice(c * MAX_SAMPLES, (c + 1) * MAX_SAMPLES)
-        const wav        = encodeWAV(slice, TARGET_RATE)
-        const blob       = new Blob([wav], { type: 'audio/wav' })
-        const fd         = new FormData()
-        fd.append('audio', blob, `chunk_${c}.wav`)
+        const offset = c * chunkDur
+        const wav    = encodeWAV(mono.slice(c * MAX_SAMPLES, (c + 1) * MAX_SAMPLES), TARGET_RATE)
+        const fd     = new FormData()
+        fd.append('audio', new Blob([wav], { type: 'audio/wav' }), `chunk_${c}.wav`)
         fd.append('chunkIdx', String(c))
 
-        updateItem(item.id, {
-          txChunk:    `Chunk ${c + 1} / ${chunks}`,
-          txProgress: Math.round((c / chunks) * 100),
-        })
+        updateItem(item.id, { txChunk: `Chunk ${c + 1} / ${chunks}`, txProgress: Math.round((c / chunks) * 100) })
 
         const res  = await fetch('/api/qc/audio', { method: 'POST', body: fd })
         const data = await res.json()
         if (data.error) throw new Error(data.error)
         if (data.transcript) parts.push(data.transcript)
-        for (const seg of (data.segments ?? [])) {
-          allSegs.push({ start: seg.start + timeOffset, end: seg.end + timeOffset, text: seg.text })
-        }
+        for (const seg of (data.segments ?? []))
+          allSegs.push({ start: seg.start + offset, end: seg.end + offset, text: seg.text })
+
         updateItem(item.id, { txProgress: Math.round(((c + 1) / chunks) * 100) })
       }
 
@@ -218,8 +264,7 @@ export function TranscriptionPanel({ pushLog }: Props) {
 
   // ── transcribeAll ──────────────────────────────────────────────────────────
   const transcribeAll = useCallback(async () => {
-    setPanelStage('transcribing')
-    setGlobalError('')
+    setPanelStage('transcribing'); setGlobalError('')
     setItems(prev => {
       ;(async () => {
         for (const item of prev) {
@@ -234,41 +279,37 @@ export function TranscriptionPanel({ pushLog }: Props) {
 
   // ── createAllDocs ──────────────────────────────────────────────────────────
   const createAllDocs = useCallback(async () => {
-    setPanelStage('creating')
-    setGlobalError('')
+    setPanelStage('creating'); setGlobalError('')
 
-    // 1. Create Drive folder
-    let fId = ''
-    let fUrl = ''
+    let fId = '', fUrl = ''
     try {
-      const template = TRANSCRIPT_TEMPLATES.find(t => t.key === templateKey)
-      const name = template?.key ?? templateKey
+      const name = selectedTemplate?.key ?? templateKey
       const res  = await fetch('/api/drive-folder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
       })
       const data = await res.json()
       if (data.error) throw new Error(data.error)
-      fId   = data.folderId
-      fUrl  = data.folderUrl
-      setFolderUrl(fUrl)
-      setFolderName(name)
+      fId = data.folderId; fUrl = data.folderUrl
+      setFolderUrl(fUrl); setFolderName(name)
       pushLog(`Drive folder created — "${name}"`, 'chat')
     } catch (err) {
-      setGlobalError(`Folder creation failed: ${String(err)}`)
-      setPanelStage('metadata')
-      return
+      setGlobalError(`Folder creation failed: ${String(err)}`); setPanelStage('metadata'); return
     }
 
-    // 2. Create each doc
-    let allDone = true
-    for (const item of items) {
+    let currentItems: BatchItem[] = []
+    setItems(prev => { currentItems = prev; return prev })
+    await new Promise(r => setTimeout(r, 0))
+    setItems(prev => { currentItems = prev; return prev })
+
+    const completedDocs: HistoryDoc[] = []
+    let successCount = 0
+
+    for (const item of currentItems) {
       updateItem(item.id, { docStatus: 'creating', docError: '' })
       try {
         const res = await fetch('/api/transcript-to-doc', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             templateKey,
             courseTitle: courseTitle.trim() || undefined,
@@ -284,30 +325,72 @@ export function TranscriptionPanel({ pushLog }: Props) {
         if (data.error) throw new Error(data.error)
         updateItem(item.id, { docStatus: 'done', docUrl: data.docUrl, docTitle: data.docTitle })
         pushLog(`Google Doc created — "${data.docTitle}"`, 'chat')
+        completedDocs.push({
+          docTitle: data.docTitle, docUrl: data.docUrl, fileName: item.file.name,
+          moduleNum: item.moduleNum, lessonNum: item.lessonNum, lessonTitle: item.lessonTitle,
+        })
+        successCount++
       } catch (err) {
         updateItem(item.id, { docStatus: 'error', docError: String(err) })
-        allDone = false
       }
     }
 
+    // Save to history
+    const entry: BatchHistoryEntry = {
+      id: `batch-${Date.now()}`, createdAt: new Date().toISOString(),
+      templateKey, courseTitle: courseTitle.trim() || (selectedTemplate?.courseTitle ?? ''),
+      courseLevel: courseLevel.trim() || 'Beginner',
+      folderUrl: fUrl, folderName: selectedTemplate?.key ?? templateKey,
+      docs: completedDocs, totalFiles: currentItems.length, successCount,
+    }
+    setHistory(prev => {
+      const next = [entry, ...prev].slice(0, MAX_HISTORY)
+      writeLS(HISTORY_KEY, next); return next
+    })
+
     setPanelStage('done')
-    if (!allDone) setGlobalError('Some docs failed — see individual errors below.')
-  }, [items, templateKey, courseTitle, courseLevel, updateItem, pushLog])
+    if (successCount < currentItems.length) setGlobalError('Some docs failed — see individual errors below.')
+  }, [items, templateKey, courseTitle, courseLevel, selectedTemplate, updateItem, pushLog])
 
   // ── reset ──────────────────────────────────────────────────────────────────
   const reset = useCallback(() => {
-    setItems([]); setPanelStage('idle'); setTemplateKey(TRANSCRIPT_TEMPLATES[0].key)
+    setItems([]); setPanelStage('idle')
+    setTemplateKey(TRANSCRIPT_TEMPLATES[0].key)
     setCourseTitle(TRANSCRIPT_TEMPLATES[0].courseTitle)
-    setCourseLevel(''); setFolderUrl(''); setFolderName(''); setGlobalError('')
-    setPreviewItem(null)
+    setCourseLevel(''); setFolderUrl(''); setFolderName(''); setGlobalError(''); setPreviewDoc(null)
   }, [])
 
-  // ── selectedTemplate ───────────────────────────────────────────────────────
-  const selectedTemplate = TRANSCRIPT_TEMPLATES.find(t => t.key === templateKey)
+  // ── History helpers ────────────────────────────────────────────────────────
+  const toggleExpand = (id: string) => setExpandedIds(prev => {
+    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next
+  })
+  const deleteHistoryEntry = (id: string) => setHistory(prev => {
+    const next = prev.filter(e => e.id !== id); writeLS(HISTORY_KEY, next); return next
+  })
+  const clearHistory = () => { setHistory([]); writeLS(HISTORY_KEY, []) }
 
-  // ── docNamePreview ─────────────────────────────────────────────────────────
-  const docNamePreview = (item: BatchItem) =>
-    `${templateKey} M${pad2(item.moduleNum || '1')}L${pad2(item.lessonNum || '1')} Transcript`
+  // ── Template helpers ───────────────────────────────────────────────────────
+  const addCustomTemplate = () => {
+    setTplError('')
+    if (!newTpl.key.trim())        return setTplError('Key is required (e.g. AB2)')
+    if (!newTpl.courseTitle.trim()) return setTplError('Course Title is required')
+    if (!newTpl.templateId.trim()) return setTplError('Template Doc ID is required')
+    const key = newTpl.key.trim().toUpperCase()
+    if (allTemplates.some(t => t.key === key)) return setTplError(`Key "${key}" already exists`)
+    const tpl: TranscriptTemplate = {
+      key,
+      label:       newTpl.label.trim() || key,
+      courseTitle: newTpl.courseTitle.trim(),
+      templateId:  newTpl.templateId.trim(),
+    }
+    setCustomTemplates(prev => {
+      const next = [...prev, tpl]; writeLS(TEMPLATES_KEY, next); return next
+    })
+    setNewTpl({ key: '', label: '', courseTitle: '', templateId: '' })
+  }
+  const deleteCustomTemplate = (key: string) => setCustomTemplates(prev => {
+    const next = prev.filter(t => t.key !== key); writeLS(TEMPLATES_KEY, next); return next
+  })
 
   // ── Export buttons ─────────────────────────────────────────────────────────
   function ExportButtons({ item }: { item: BatchItem }) {
@@ -315,22 +398,16 @@ export function TranscriptionPanel({ pushLog }: Props) {
     const name = baseName(item.file)
     return (
       <div className="flex items-center gap-1">
-        <button
-          onClick={() => downloadText(item.transcript, `${name}.txt`, 'text/plain')}
-          className="flex items-center gap-0.5 text-[9px] text-gray-500 hover:text-gray-300 px-1.5 py-0.5 rounded hover:bg-white/5 transition-colors"
-        >
+        <button onClick={() => dlText(item.transcript, `${name}.txt`, 'text/plain')}
+          className="flex items-center gap-0.5 text-[9px] text-gray-500 hover:text-gray-300 px-1.5 py-0.5 rounded hover:bg-white/5 transition-colors">
           <Download size={9} />TXT
         </button>
-        <button
-          onClick={() => downloadText(generateSRT(item.segments), `${name}.srt`, 'text/plain')}
-          className="flex items-center gap-0.5 text-[9px] text-violet-500 hover:text-violet-300 px-1.5 py-0.5 rounded hover:bg-violet-900/20 border border-violet-800/30 transition-colors"
-        >
+        <button onClick={() => dlText(generateSRT(item.segments), `${name}.srt`, 'text/plain')}
+          className="flex items-center gap-0.5 text-[9px] text-violet-500 hover:text-violet-300 px-1.5 py-0.5 rounded hover:bg-violet-900/20 border border-violet-800/30 transition-colors">
           <FileCode size={9} />SRT
         </button>
-        <button
-          onClick={() => downloadText(generateVTT(item.segments), `${name}.vtt`, 'text/vtt')}
-          className="flex items-center gap-0.5 text-[9px] text-violet-500 hover:text-violet-300 px-1.5 py-0.5 rounded hover:bg-violet-900/20 border border-violet-800/30 transition-colors"
-        >
+        <button onClick={() => dlText(generateVTT(item.segments), `${name}.vtt`, 'text/vtt')}
+          className="flex items-center gap-0.5 text-[9px] text-violet-500 hover:text-violet-300 px-1.5 py-0.5 rounded hover:bg-violet-900/20 border border-violet-800/30 transition-colors">
           <FileCode size={9} />VTT
         </button>
       </div>
@@ -343,46 +420,35 @@ export function TranscriptionPanel({ pushLog }: Props) {
   return (
     <>
       {/* ── Preview modal ──────────────────────────────────────────────────── */}
-      {previewItem?.docUrl && (
+      {previewDoc && (
         <div className="fixed inset-0 z-50 flex flex-col bg-[#07080e]">
-          {/* Modal header */}
           <div className="flex items-center justify-between px-4 py-2.5 bg-[#0d0f1a] border-b border-[#1e2030] flex-shrink-0">
             <div className="flex items-center gap-2 min-w-0">
               <FileText size={13} className="text-emerald-400 flex-shrink-0" />
-              <span className="text-xs font-semibold text-gray-200 truncate">{previewItem.docTitle}</span>
+              <span className="text-xs font-semibold text-gray-200 truncate">{previewDoc.title}</span>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
-              <a
-                href={previewItem.docUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300 px-2.5 py-1.5 rounded-lg bg-emerald-900/30 border border-emerald-800/40 transition-colors"
-              >
+              <a href={previewDoc.url} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300 px-2.5 py-1.5 rounded-lg bg-emerald-900/30 border border-emerald-800/40 transition-colors">
                 <ExternalLink size={10} />Open in Google Docs
               </a>
-              <button
-                onClick={() => setPreviewItem(null)}
-                className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-gray-300 px-2.5 py-1.5 rounded-lg hover:bg-white/5 border border-[#2a2d3a] transition-colors"
-              >
+              <button onClick={() => setPreviewDoc(null)}
+                className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-gray-300 px-2.5 py-1.5 rounded-lg hover:bg-white/5 border border-[#2a2d3a] transition-colors">
                 <EyeOff size={10} />Close
               </button>
             </div>
           </div>
-          {/* Iframe */}
-          <iframe
-            src={previewUrl(previewItem.docUrl)}
-            className="flex-1 w-full border-0"
-            title={previewItem.docTitle}
-            allowFullScreen
-          />
+          <iframe src={previewUrl(previewDoc.url)} className="flex-1 w-full border-0" title={previewDoc.title} allowFullScreen />
         </div>
       )}
 
       <div className="flex-1 min-w-0 flex flex-col gap-3 min-h-0 overflow-y-auto">
 
-        {/* ── Header + Drop Zone ───────────────────────────────────────────── */}
-        <div className="flex-shrink-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-4">
-          <div className="flex items-center justify-between mb-3">
+        {/* ── Header card ────────────────────────────────────────────────────── */}
+        <div className="flex-shrink-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-4 space-y-3">
+
+          {/* Title row + tabs */}
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-lg bg-violet-900/40 border border-violet-800/40 flex items-center justify-center">
                 <Mic size={13} className="text-violet-400" />
@@ -392,123 +458,313 @@ export function TranscriptionPanel({ pushLog }: Props) {
                 <p className="text-[10px] text-gray-600">Whisper · multi-file · Google Docs</p>
               </div>
             </div>
-            {panelStage !== 'idle' && (
-              <button
-                onClick={reset}
-                className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-gray-400 transition-colors px-2 py-1 rounded hover:bg-white/5"
-              >
-                <X size={11} />New Batch
-              </button>
-            )}
-          </div>
-
-          {/* Drop zone */}
-          <div
-            onDrop={onDrop}
-            onDragOver={e => e.preventDefault()}
-            onClick={() => fileInput.current?.click()}
-            className="border-2 border-dashed border-[#2a2d3a] hover:border-violet-800/60 rounded-xl p-5 text-center cursor-pointer transition-colors group"
-          >
-            <Upload size={18} className="mx-auto text-gray-700 group-hover:text-violet-800/60 mb-1.5 transition-colors" />
-            <p className="text-xs text-gray-600 group-hover:text-gray-500 transition-colors">
-              Drop video/audio files or <span className="text-violet-400">click to browse</span>
-            </p>
-            <p className="text-[10px] text-gray-700 mt-0.5">MP4, MOV, MKV, MP3, WAV, M4A — multiple files OK</p>
-            <input
-              ref={fileInput} id={`${uid}-file`} type="file"
-              accept="video/*,audio/*" multiple className="hidden"
-              onChange={e => { if (e.target.files?.length) addFiles(Array.from(e.target.files)) }}
-            />
-          </div>
-
-          {globalError && (
-            <p className="mt-2 text-[10px] text-red-400">{globalError}</p>
-          )}
-        </div>
-
-        {/* ── Global Settings (visible from queued onwards) ─────────────────── */}
-        {panelStage !== 'idle' && (
-          <div className="flex-shrink-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-4 space-y-3">
-            <p className="text-xs font-semibold text-gray-300">Global Settings</p>
-
-            {/* Folder success banner */}
-            {folderUrl && (
-              <div className="flex items-center gap-2 bg-emerald-900/20 border border-emerald-800/40 rounded-lg px-3 py-2">
-                <FolderOpen size={12} className="text-emerald-400 flex-shrink-0" />
-                <span className="text-xs text-emerald-300 flex-1 truncate">{folderName}</span>
-                <a href={folderUrl} target="_blank" rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300 transition-colors flex-shrink-0">
-                  Open <ExternalLink size={10} />
-                </a>
+            <div className="flex items-center gap-2">
+              {/* Tab bar */}
+              <div className="flex items-center bg-[#07080e] border border-[#1e2030] rounded-lg p-0.5">
+                {([
+                  { id: 'batch',     icon: <Upload size={9} />,   label: 'Batch'     },
+                  { id: 'history',   icon: <History size={9} />,  label: 'History',  badge: history.length },
+                  { id: 'templates', icon: <Settings size={9} />, label: 'Templates' },
+                ] as const).map(tab => (
+                  <button key={tab.id} onClick={() => setView(tab.id)}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-medium transition-colors ${
+                      view === tab.id
+                        ? 'bg-violet-900/60 text-violet-300 border border-violet-800/40'
+                        : 'text-gray-600 hover:text-gray-400'
+                    }`}>
+                    {tab.icon}{tab.label}
+                    {'badge' in tab && tab.badge > 0 && (
+                      <span className="ml-0.5 bg-violet-800/60 text-violet-300 rounded-full px-1 text-[8px] font-bold">{tab.badge}</span>
+                    )}
+                  </button>
+                ))}
               </div>
-            )}
+              {view === 'batch' && panelStage !== 'idle' && (
+                <button onClick={reset}
+                  className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-gray-400 transition-colors px-2 py-1 rounded hover:bg-white/5">
+                  <X size={11} />New Batch
+                </button>
+              )}
+            </div>
+          </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              {/* Course template */}
-              <div>
-                <label className="block text-[10px] text-gray-500 mb-1">Course</label>
-                <div className="relative">
-                  <select
-                    value={templateKey}
-                    onChange={e => {
-                      const key = e.target.value
-                      setTemplateKey(key)
-                      const tpl = TRANSCRIPT_TEMPLATES.find(t => t.key === key)
-                      if (tpl) setCourseTitle(tpl.courseTitle)
-                    }}
+          {/* ── Always-visible global settings ───────────────────────────── */}
+          {view === 'batch' && (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                {/* Course template */}
+                <div>
+                  <label className="block text-[10px] text-gray-500 mb-1">Course Template</label>
+                  <div className="relative">
+                    <select
+                      value={templateKey}
+                      onChange={e => {
+                        const key = e.target.value
+                        setTemplateKey(key)
+                        const tpl = allTemplates.find(t => t.key === key)
+                        if (tpl) setCourseTitle(tpl.courseTitle)
+                      }}
+                      disabled={isLocked}
+                      className="w-full bg-[#07080e] border border-[#1e2030] rounded-lg px-3 py-2 text-xs text-gray-300 appearance-none cursor-pointer focus:outline-none focus:border-violet-800/60 disabled:opacity-50"
+                    >
+                      {allTemplates.map(t => (
+                        <option key={t.key} value={t.key}>{t.label}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={11} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* Course Level */}
+                <div>
+                  <label className="block text-[10px] text-gray-500 mb-1">Course Level</label>
+                  <input type="text" value={courseLevel}
+                    onChange={e => setCourseLevel(e.target.value)}
+                    placeholder="Beginner"
                     disabled={isLocked}
-                    className="w-full bg-[#07080e] border border-[#1e2030] rounded-lg px-3 py-2 text-xs text-gray-300 appearance-none cursor-pointer focus:outline-none focus:border-violet-800/60 disabled:opacity-50"
-                  >
-                    {TRANSCRIPT_TEMPLATES.map(t => (
-                      <option key={t.key} value={t.key}>{t.label}</option>
-                    ))}
-                  </select>
-                  <ChevronDown size={11} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" />
+                    className="w-full bg-[#07080e] border border-[#1e2030] rounded-lg px-3 py-2 text-xs text-gray-300 focus:outline-none focus:border-violet-800/60 placeholder:text-gray-700 disabled:opacity-50"
+                  />
+                </div>
+
+                {/* Course Title — full width */}
+                <div className="col-span-2">
+                  <label className="block text-[10px] text-gray-500 mb-1">Course Title</label>
+                  <input type="text" value={courseTitle}
+                    onChange={e => setCourseTitle(e.target.value)}
+                    placeholder="e.g. Launching Email Campaigns"
+                    disabled={isLocked}
+                    className="w-full bg-[#07080e] border border-[#1e2030] rounded-lg px-3 py-2 text-xs text-gray-300 focus:outline-none focus:border-violet-800/60 placeholder:text-gray-700 disabled:opacity-50"
+                  />
                 </div>
               </div>
 
-              {/* Course Level */}
-              <div>
-                <label className="block text-[10px] text-gray-500 mb-1">Course Level</label>
-                <input
-                  type="text" value={courseLevel}
-                  onChange={e => setCourseLevel(e.target.value)}
-                  placeholder="Beginner"
-                  disabled={isLocked}
-                  className="w-full bg-[#07080e] border border-[#1e2030] rounded-lg px-3 py-2 text-xs text-gray-300 focus:outline-none focus:border-violet-800/60 placeholder:text-gray-700 disabled:opacity-50"
-                />
+              {/* Drive folder banner */}
+              {folderUrl && (
+                <div className="flex items-center gap-2 bg-emerald-900/20 border border-emerald-800/40 rounded-lg px-3 py-2">
+                  <FolderOpen size={12} className="text-emerald-400 flex-shrink-0" />
+                  <span className="text-xs text-emerald-300 flex-1 truncate">{folderName}</span>
+                  <a href={folderUrl} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300 transition-colors flex-shrink-0">
+                    Open <ExternalLink size={10} />
+                  </a>
+                </div>
+              )}
+
+              {/* Drop zone */}
+              <div
+                onDrop={onDrop} onDragOver={e => e.preventDefault()}
+                onClick={() => fileInput.current?.click()}
+                className="border-2 border-dashed border-[#2a2d3a] hover:border-violet-800/60 rounded-xl p-5 text-center cursor-pointer transition-colors group"
+              >
+                <Upload size={18} className="mx-auto text-gray-700 group-hover:text-violet-800/60 mb-1.5 transition-colors" />
+                <p className="text-xs text-gray-600 group-hover:text-gray-500 transition-colors">
+                  Drop video/audio files or <span className="text-violet-400">click to browse</span>
+                </p>
+                <p className="text-[10px] text-gray-700 mt-0.5">MP4, MOV, MKV, MP3, WAV, M4A — multiple files OK</p>
+                <input ref={fileInput} id={`${uid}-file`} type="file" accept="video/*,audio/*" multiple className="hidden"
+                  onChange={e => { if (e.target.files?.length) addFiles(Array.from(e.target.files)) }} />
               </div>
 
-              {/* Course Title — full width */}
-              <div className="col-span-2">
-                <label className="block text-[10px] text-gray-500 mb-1">Course Title</label>
-                <input
-                  type="text" value={courseTitle}
-                  onChange={e => setCourseTitle(e.target.value)}
-                  placeholder="e.g. Launching Email Campaigns"
-                  disabled={isLocked}
-                  className="w-full bg-[#07080e] border border-[#1e2030] rounded-lg px-3 py-2 text-xs text-gray-300 focus:outline-none focus:border-violet-800/60 placeholder:text-gray-700 disabled:opacity-50"
-                />
+              {globalError && <p className="text-[10px] text-red-400">{globalError}</p>}
+            </>
+          )}
+        </div>
+
+        {/* ════════════════════════════════════════════════════════════════════ */}
+        {/* HISTORY VIEW                                                         */}
+        {/* ════════════════════════════════════════════════════════════════════ */}
+        {view === 'history' && (
+          <div className="flex-shrink-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-300">
+                {history.length === 0 ? 'No history yet' : `${history.length} batch${history.length !== 1 ? 'es' : ''}`}
+              </p>
+              {history.length > 0 && (
+                <button onClick={clearHistory}
+                  className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-red-400 transition-colors px-2 py-1 rounded hover:bg-red-900/10">
+                  <Trash2 size={10} />Clear all
+                </button>
+              )}
+            </div>
+
+            {history.length === 0 && (
+              <div className="text-center py-8">
+                <History size={24} className="mx-auto text-gray-700 mb-2" />
+                <p className="text-xs text-gray-600">Completed batches will appear here</p>
               </div>
+            )}
+
+            <div className="space-y-2 max-h-[520px] overflow-y-auto pr-0.5">
+              {history.map(entry => {
+                const expanded = expandedIds.has(entry.id)
+                return (
+                  <div key={entry.id} className="bg-[#07080e] border border-[#1e2030] rounded-lg overflow-hidden">
+                    <button className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-white/[0.02] transition-colors text-left"
+                      onClick={() => toggleExpand(entry.id)}>
+                      <ChevronRight size={12} className={`text-gray-600 flex-shrink-0 transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-violet-400 flex-shrink-0">{entry.templateKey}</span>
+                          <span className="text-[10px] text-gray-300 truncate">{entry.courseTitle}</span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[9px] text-gray-600">{fmtDate(entry.createdAt)}</span>
+                          <span className="text-[9px] text-gray-700">·</span>
+                          <span className="text-[9px] text-gray-600">{entry.successCount}/{entry.totalFiles} doc{entry.totalFiles !== 1 ? 's' : ''}</span>
+                          {entry.courseLevel && <><span className="text-[9px] text-gray-700">·</span><span className="text-[9px] text-gray-600">{entry.courseLevel}</span></>}
+                        </div>
+                      </div>
+                      {entry.folderUrl && (
+                        <a href={entry.folderUrl} target="_blank" rel="noopener noreferrer"
+                          onClick={e => e.stopPropagation()}
+                          className="flex items-center gap-1 text-[9px] text-emerald-500 hover:text-emerald-400 px-2 py-1 rounded bg-emerald-900/20 border border-emerald-800/30 transition-colors flex-shrink-0">
+                          <FolderOpen size={9} />Folder
+                        </a>
+                      )}
+                      <button onClick={e => { e.stopPropagation(); deleteHistoryEntry(entry.id) }}
+                        className="text-gray-700 hover:text-red-400 transition-colors flex-shrink-0 p-1 rounded hover:bg-red-900/10">
+                        <Trash2 size={10} />
+                      </button>
+                    </button>
+
+                    {expanded && (
+                      <div className="border-t border-[#1e2030] px-3 py-2 space-y-1.5">
+                        {entry.docs.length === 0 && <p className="text-[10px] text-gray-600">No docs were created in this batch.</p>}
+                        {entry.docs.map((doc, i) => (
+                          <div key={i} className="flex items-center gap-2 min-w-0">
+                            <FileText size={10} className="text-gray-600 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] text-gray-300 truncate">{doc.docTitle}</p>
+                              {doc.lessonTitle && <p className="text-[9px] text-gray-600 truncate">{doc.lessonTitle}</p>}
+                            </div>
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <button onClick={() => setPreviewDoc({ url: doc.docUrl, title: doc.docTitle })}
+                                className="flex items-center gap-0.5 text-[9px] text-violet-500 hover:text-violet-300 px-1.5 py-1 rounded bg-violet-900/20 border border-violet-800/30 transition-colors">
+                                <Eye size={9} />Preview
+                              </button>
+                              <a href={doc.docUrl} target="_blank" rel="noopener noreferrer"
+                                className="flex items-center gap-0.5 text-[9px] text-emerald-500 hover:text-emerald-400 px-1.5 py-1 rounded bg-emerald-900/20 border border-emerald-800/30 transition-colors">
+                                <ExternalLink size={9} />Open
+                              </a>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}
 
-        {/* ── File list (all active stages) ────────────────────────────────── */}
-        {panelStage !== 'idle' && items.length > 0 && (
+        {/* ════════════════════════════════════════════════════════════════════ */}
+        {/* TEMPLATES VIEW                                                       */}
+        {/* ════════════════════════════════════════════════════════════════════ */}
+        {view === 'templates' && (
+          <div className="flex-shrink-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-4 space-y-4">
+
+            {/* Add new template form */}
+            <div>
+              <p className="text-xs font-semibold text-gray-300 mb-2 flex items-center gap-1.5">
+                <Plus size={11} className="text-violet-400" />Add New Template
+              </p>
+              <div className="bg-[#07080e] border border-[#1e2030] rounded-lg p-3 space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] text-gray-500 mb-1">Key <span className="text-gray-700">(e.g. AB2)</span></label>
+                    <input type="text" value={newTpl.key}
+                      onChange={e => setNewTpl(p => ({ ...p, key: e.target.value }))}
+                      placeholder="AB2"
+                      className="w-full bg-[#0d0f1a] border border-[#2a2d3a] rounded px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-violet-800/60 placeholder:text-gray-700 uppercase"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-500 mb-1">Label <span className="text-gray-700">(display name)</span></label>
+                    <input type="text" value={newTpl.label}
+                      onChange={e => setNewTpl(p => ({ ...p, label: e.target.value }))}
+                      placeholder="AB2 — My Course"
+                      className="w-full bg-[#0d0f1a] border border-[#2a2d3a] rounded px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-violet-800/60 placeholder:text-gray-700"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-[10px] text-gray-500 mb-1">Course Title</label>
+                    <input type="text" value={newTpl.courseTitle}
+                      onChange={e => setNewTpl(p => ({ ...p, courseTitle: e.target.value }))}
+                      placeholder="e.g. Advanced Email Campaigns"
+                      className="w-full bg-[#0d0f1a] border border-[#2a2d3a] rounded px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-violet-800/60 placeholder:text-gray-700"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-[10px] text-gray-500 mb-1">
+                      Google Doc Template ID
+                      <span className="text-gray-700 ml-1">— from the URL: /document/d/<span className="text-violet-600">ID</span>/edit</span>
+                    </label>
+                    <input type="text" value={newTpl.templateId}
+                      onChange={e => setNewTpl(p => ({ ...p, templateId: e.target.value }))}
+                      placeholder="1XTbKQhk_DPkZQlF9Ho-k-hQ5cEyAvBUdmGYTa4g1MMY"
+                      className="w-full bg-[#0d0f1a] border border-[#2a2d3a] rounded px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-violet-800/60 placeholder:text-gray-700 font-mono"
+                    />
+                  </div>
+                </div>
+                {tplError && <p className="text-[10px] text-red-400">{tplError}</p>}
+                <button onClick={addCustomTemplate}
+                  className="flex items-center gap-1.5 bg-violet-900/60 hover:bg-violet-800/60 border border-violet-800/40 text-violet-300 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors">
+                  <Save size={11} />Save Template
+                </button>
+              </div>
+            </div>
+
+            {/* Built-in templates list */}
+            <div>
+              <p className="text-[10px] font-semibold text-gray-500 mb-2 uppercase tracking-wider">Built-in ({TRANSCRIPT_TEMPLATES.length})</p>
+              <div className="space-y-1 max-h-[200px] overflow-y-auto pr-0.5">
+                {TRANSCRIPT_TEMPLATES.map(t => (
+                  <div key={t.key} className="flex items-center gap-2 px-3 py-2 bg-[#07080e] border border-[#1e2030] rounded-lg">
+                    <span className="text-[10px] font-bold text-violet-400 w-10 flex-shrink-0">{t.key}</span>
+                    <span className="text-[10px] text-gray-400 flex-1 truncate">{t.courseTitle}</span>
+                    <span className="text-[9px] text-gray-700 font-mono truncate max-w-[100px]">{t.templateId.slice(0, 12)}…</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Custom templates list */}
+            {customTemplates.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold text-gray-500 mb-2 uppercase tracking-wider">Custom ({customTemplates.length})</p>
+                <div className="space-y-1 max-h-[200px] overflow-y-auto pr-0.5">
+                  {customTemplates.map(t => (
+                    <div key={t.key} className="flex items-center gap-2 px-3 py-2 bg-[#07080e] border border-emerald-900/40 rounded-lg">
+                      <span className="text-[10px] font-bold text-emerald-400 w-10 flex-shrink-0">{t.key}</span>
+                      <span className="text-[10px] text-gray-400 flex-1 truncate">{t.courseTitle}</span>
+                      <span className="text-[9px] text-gray-700 font-mono truncate max-w-[100px]">{t.templateId.slice(0, 12)}…</span>
+                      <button onClick={() => deleteCustomTemplate(t.key)}
+                        className="text-gray-700 hover:text-red-400 transition-colors p-1 rounded hover:bg-red-900/10 flex-shrink-0">
+                        <Trash2 size={10} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ════════════════════════════════════════════════════════════════════ */}
+        {/* BATCH VIEW — file list + action bar                                  */}
+        {/* ════════════════════════════════════════════════════════════════════ */}
+        {view === 'batch' && items.length > 0 && (
           <div className="flex-shrink-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-4">
             <div className="flex items-center justify-between mb-3">
               <p className="text-xs font-semibold text-gray-300">
                 {items.length} file{items.length !== 1 ? 's' : ''}
-                {panelStage === 'metadata' || panelStage === 'creating' || panelStage === 'done'
-                  ? ' — fill in metadata below then create docs'
-                  : ' queued — fill in metadata, then transcribe'}
+                {panelStage === 'queued'   ? ' — fill in metadata, then transcribe' : ''}
+                {panelStage === 'metadata' ? ' — ready to create docs' : ''}
               </p>
               {panelStage === 'queued' && (
-                <button
-                  onClick={transcribeAll}
-                  className="flex items-center gap-1.5 bg-violet-800/80 hover:bg-violet-700 text-white rounded-lg px-4 py-2 text-xs font-semibold transition-colors"
-                >
+                <button onClick={transcribeAll}
+                  className="flex items-center gap-1.5 bg-violet-800/80 hover:bg-violet-700 text-white rounded-lg px-4 py-2 text-xs font-semibold transition-colors">
                   <Mic size={12} />Transcribe All
                 </button>
               )}
@@ -524,7 +780,7 @@ export function TranscriptionPanel({ pushLog }: Props) {
               {items.map(item => (
                 <div key={item.id} className="bg-[#07080e] border border-[#1e2030] rounded-lg p-3 space-y-2">
 
-                  {/* ── File name row ── */}
+                  {/* File name row */}
                   <div className="flex items-center gap-2 min-w-0">
                     {item.txStatus === 'pending'      && <FileText size={12} className="text-gray-600 flex-shrink-0" />}
                     {item.txStatus === 'transcribing' && <Loader2  size={12} className="text-violet-400 animate-spin flex-shrink-0" />}
@@ -544,7 +800,7 @@ export function TranscriptionPanel({ pushLog }: Props) {
                     )}
                   </div>
 
-                  {/* ── Progress bar (transcribing) ── */}
+                  {/* Progress bar */}
                   {item.txStatus === 'transcribing' && (
                     <div className="space-y-1">
                       <div className="flex justify-between">
@@ -556,17 +812,13 @@ export function TranscriptionPanel({ pushLog }: Props) {
                       </div>
                     </div>
                   )}
+                  {item.txStatus === 'error' && <p className="text-[10px] text-red-400 truncate">{item.txError}</p>}
 
-                  {item.txStatus === 'error' && (
-                    <p className="text-[10px] text-red-400 truncate">{item.txError}</p>
-                  )}
-
-                  {/* ── Footer metadata fields (always visible) ── */}
+                  {/* Footer metadata */}
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-[10px] text-gray-600 mb-1">Module #</label>
-                      <input
-                        type="number" min="1" value={item.moduleNum}
+                      <input type="number" min="1" value={item.moduleNum}
                         onChange={e => updateItem(item.id, { moduleNum: e.target.value })}
                         disabled={isLocked}
                         className="w-full bg-[#0d0f1a] border border-[#2a2d3a] rounded px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-violet-800/60 disabled:opacity-50"
@@ -574,8 +826,7 @@ export function TranscriptionPanel({ pushLog }: Props) {
                     </div>
                     <div>
                       <label className="block text-[10px] text-gray-600 mb-1">Lesson #</label>
-                      <input
-                        type="number" min="1" value={item.lessonNum}
+                      <input type="number" min="1" value={item.lessonNum}
                         onChange={e => updateItem(item.id, { lessonNum: e.target.value })}
                         disabled={isLocked}
                         className="w-full bg-[#0d0f1a] border border-[#2a2d3a] rounded px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-violet-800/60 disabled:opacity-50"
@@ -583,8 +834,7 @@ export function TranscriptionPanel({ pushLog }: Props) {
                     </div>
                     <div className="col-span-2">
                       <label className="block text-[10px] text-gray-600 mb-1">Lesson Title</label>
-                      <input
-                        type="text" value={item.lessonTitle}
+                      <input type="text" value={item.lessonTitle}
                         onChange={e => updateItem(item.id, { lessonTitle: e.target.value })}
                         placeholder="e.g. Introduction to Email Marketing"
                         disabled={isLocked}
@@ -593,45 +843,34 @@ export function TranscriptionPanel({ pushLog }: Props) {
                     </div>
                   </div>
 
-                  {/* ── Doc name preview ── */}
-                  <div className="flex items-center gap-1.5 text-[10px] text-gray-600">
-                    <span>→ doc will be named:</span>
-                    <span className="font-mono text-gray-500">{docNamePreview(item)}</span>
-                  </div>
+                  {/* Doc name preview */}
+                  <p className="text-[10px] text-gray-600">
+                    → doc: <span className="font-mono text-gray-500">{templateKey} M{pad2(item.moduleNum || '1')}L{pad2(item.lessonNum || '1')} Transcript</span>
+                  </p>
 
-                  {/* ── Doc creation status / links / preview ── */}
+                  {/* Doc status */}
                   {item.docStatus === 'creating' && (
                     <div className="flex items-center gap-1.5 text-[10px] text-emerald-400">
                       <Loader2 size={11} className="animate-spin" />Creating doc…
                     </div>
                   )}
-
                   {item.docStatus === 'done' && item.docUrl && (
                     <div className="flex items-center gap-2 bg-emerald-900/20 border border-emerald-800/30 rounded-lg px-3 py-2">
                       <Check size={11} className="text-emerald-400 flex-shrink-0" />
                       <span className="text-[10px] text-emerald-300 flex-1 truncate font-medium">{item.docTitle}</span>
                       <div className="flex items-center gap-1.5 flex-shrink-0">
-                        <button
-                          onClick={() => setPreviewItem(item)}
-                          className="flex items-center gap-1 text-[10px] text-violet-400 hover:text-violet-300 px-2 py-1 rounded bg-violet-900/30 border border-violet-800/40 transition-colors"
-                        >
+                        <button onClick={() => setPreviewDoc({ url: item.docUrl, title: item.docTitle })}
+                          className="flex items-center gap-1 text-[10px] text-violet-400 hover:text-violet-300 px-2 py-1 rounded bg-violet-900/30 border border-violet-800/40 transition-colors">
                           <Eye size={9} />Preview
                         </button>
-                        <a
-                          href={item.docUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300 px-2 py-1 rounded bg-emerald-900/30 border border-emerald-800/40 transition-colors"
-                        >
+                        <a href={item.docUrl} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300 px-2 py-1 rounded bg-emerald-900/30 border border-emerald-800/40 transition-colors">
                           <ExternalLink size={9} />Open
                         </a>
                       </div>
                     </div>
                   )}
-
-                  {item.docStatus === 'error' && (
-                    <p className="text-[10px] text-red-400">{item.docError}</p>
-                  )}
+                  {item.docStatus === 'error' && <p className="text-[10px] text-red-400">{item.docError}</p>}
                 </div>
               ))}
             </div>
@@ -639,25 +878,23 @@ export function TranscriptionPanel({ pushLog }: Props) {
         )}
 
         {/* ── Action bar ───────────────────────────────────────────────────── */}
-        {panelStage === 'metadata' && (
+        {view === 'batch' && panelStage === 'metadata' && (
           <div className="flex-shrink-0">
-            <button
-              onClick={createAllDocs}
+            <button onClick={createAllDocs}
               disabled={!selectedTemplate || items.every(it => it.txStatus !== 'done')}
-              className="w-full flex items-center justify-center gap-2 bg-emerald-900/60 hover:bg-emerald-800/60 disabled:opacity-40 disabled:cursor-not-allowed border border-emerald-800/40 text-emerald-300 rounded-xl px-4 py-3 text-xs font-semibold transition-colors"
-            >
+              className="w-full flex items-center justify-center gap-2 bg-emerald-900/60 hover:bg-emerald-800/60 disabled:opacity-40 disabled:cursor-not-allowed border border-emerald-800/40 text-emerald-300 rounded-xl px-4 py-3 text-xs font-semibold transition-colors">
               <BookOpen size={13} />Create All Docs
             </button>
           </div>
         )}
 
-        {panelStage === 'creating' && (
+        {view === 'batch' && panelStage === 'creating' && (
           <div className="flex-shrink-0 flex items-center justify-center gap-2 text-xs text-emerald-400 py-2">
             <Loader2 size={13} className="animate-spin" />Creating docs…
           </div>
         )}
 
-        {panelStage === 'done' && (
+        {view === 'batch' && panelStage === 'done' && (
           <div className="flex-shrink-0 flex items-center gap-2 text-[10px] text-gray-500 bg-[#0d0f1a] rounded-xl border border-[#1e2030] px-4 py-3">
             <Check size={11} className="text-emerald-400" />
             <span>All done — {items.filter(i => i.docStatus === 'done').length} / {items.length} docs created.</span>
