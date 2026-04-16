@@ -149,6 +149,7 @@ function previewUrl(editUrl: string) { return editUrl.replace('/edit', '/preview
 export function TranscriptionPanel({ pushLog }: Props) {
   const uid = useId()
   const fileInput = useRef<HTMLInputElement>(null)
+  const itemsRef  = useRef<BatchItem[]>([])
 
   // ── Batch state ────────────────────────────────────────────────────────────
   const [items,       setItems]       = useState<BatchItem[]>([])
@@ -178,6 +179,9 @@ export function TranscriptionPanel({ pushLog }: Props) {
     setHistory(readLS<BatchHistoryEntry[]>(HISTORY_KEY, []))
     setCustomTemplates(readLS<TranscriptTemplate[]>(TEMPLATES_KEY, []))
   }, [])
+
+  // Keep itemsRef in sync so createAllDocs can read current items reliably
+  useEffect(() => { itemsRef.current = items }, [items])
 
   // All available templates = static + custom
   const allTemplates: TranscriptTemplate[] = [...TRANSCRIPT_TEMPLATES, ...customTemplates]
@@ -297,10 +301,7 @@ export function TranscriptionPanel({ pushLog }: Props) {
       setGlobalError(`Folder creation failed: ${String(err)}`); setPanelStage('metadata'); return
     }
 
-    let currentItems: BatchItem[] = []
-    setItems(prev => { currentItems = prev; return prev })
-    await new Promise(r => setTimeout(r, 0))
-    setItems(prev => { currentItems = prev; return prev })
+    const currentItems = itemsRef.current
 
     const completedDocs: HistoryDoc[] = []
     let successCount = 0
@@ -350,7 +351,7 @@ export function TranscriptionPanel({ pushLog }: Props) {
 
     setPanelStage('done')
     if (successCount < currentItems.length) setGlobalError('Some docs failed — see individual errors below.')
-  }, [items, templateKey, courseTitle, courseLevel, selectedTemplate, updateItem, pushLog])
+  }, [templateKey, courseTitle, courseLevel, selectedTemplate, updateItem, pushLog])
 
   // ── reset ──────────────────────────────────────────────────────────────────
   const reset = useCallback(() => {
@@ -872,7 +873,7 @@ export function TranscriptionPanel({ pushLog }: Props) {
                       </div>
                     </div>
                   )}
-                  {item.docStatus === 'error' && <p className="text-[10px] text-red-400">{item.docError}</p>}
+                  {item.docStatus === 'error' && <p className="text-[10px] text-red-400">{item.docError || 'Doc creation failed — check Vercel logs'}</p>}
                 </div>
               ))}
             </div>
