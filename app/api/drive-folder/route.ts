@@ -8,7 +8,10 @@ export async function POST(req: NextRequest) {
     const { name } = await req.json() as { name: string }
     if (!name?.trim()) return NextResponse.json({ error: 'Folder name required.' }, { status: 400 })
 
-    const result = await createDriveFolder(name.trim())
+    // If a root folder is configured, create the batch folder inside it
+    const parentFolderId = process.env.TRANSCRIPTS_ROOT_FOLDER_ID || undefined
+
+    const result = await createDriveFolder(name.trim(), parentFolderId)
     return NextResponse.json(result)
   } catch (err: unknown) {
     console.error('[drive-folder]', err)

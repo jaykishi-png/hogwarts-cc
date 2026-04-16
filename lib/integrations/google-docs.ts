@@ -12,15 +12,21 @@ function getAuth() {
 
 // ─── Create a Google Drive folder ──────────────────────────────────────────
 
-export async function createDriveFolder(name: string): Promise<{ folderId: string; folderUrl: string }> {
+export async function createDriveFolder(
+  name: string,
+  parentFolderId?: string,
+): Promise<{ folderId: string; folderUrl: string }> {
   const auth  = getAuth()
   const drive = google.drive({ version: 'v3', auth })
 
+  const requestBody: Record<string, unknown> = {
+    name,
+    mimeType: 'application/vnd.google-apps.folder',
+  }
+  if (parentFolderId) requestBody.parents = [parentFolderId]
+
   const res = await drive.files.create({
-    requestBody: {
-      name,
-      mimeType: 'application/vnd.google-apps.folder',
-    },
+    requestBody,
     fields: 'id',
   })
 
