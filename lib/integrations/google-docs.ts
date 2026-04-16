@@ -125,53 +125,33 @@ export async function createTranscriptDoc(
     requestBody: { requests },
   })
 
-  // 3. Write course metadata to the page footer.
-  // Templates only need {{BODY_COPY}} — metadata is always added programmatically
-  // to ensure it appears even if the template has no footer placeholders.
-  try {
-    // createFooter returns the existing footer ID if one already exists,
-    // or creates a new empty footer and returns its ID.
-    const footerCreateRes = await docs.documents.batchUpdate({
-      documentId:  docId,
-      requestBody: { requests: [{ createFooter: { type: 'DEFAULT' } }] },
-    })
-    const footerId = footerCreateRes.data.replies?.[0]?.createFooter?.footerId
+  // 3. Append course metadata at the end of the document body.
+  // We read the doc to find the current body end index, then insert
+  // before the final newline. This is more reliable than page footers
+  // because it doesn't depend on the template's footer structure.
+  const docSnap  = await docs.documents.get({ documentId: docId })
+  const bodyContent = docSnap.data.body?.content ?? []
+  // The last structural element is always an implicit paragraph; inserting
+  // at endIndex−1 places text before that final newline.
+  const lastElem = bodyContent[bodyContent.length - 1]
+  const insertAt = (lastElem?.endIndex ?? 2) - 1
 
-    if (footerId) {
-      // Read the doc to inspect current footer content.
-      const docSnap = await docs.documents.get({ documentId: docId })
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const footerContent = (docSnap.data.footers as any)?.[footerId]?.content ?? []
-      // An empty footer contains exactly one paragraph with a single newline.
-      const currentText: string = footerContent
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .flatMap((c: any) => c.paragraph?.elements?.map((e: any) => e.textRun?.content ?? '') ?? [])
-        .join('')
-      const isEmptyFooter = currentText.trim() === ''
+  const meta =
+    `\n\n${opts.footer.courseTitle}  |  ${opts.footer.courseLevel}\n` +
+    `Module ${opts.footer.moduleNum}  |  Lesson ${opts.footer.lessonNum}\n` +
+    opts.footer.lessonTitle
 
-      if (isEmptyFooter) {
-        const meta =
-          `${opts.footer.courseTitle}  |  ${opts.footer.courseLevel}\n` +
-          `Module ${opts.footer.moduleNum}  |  Lesson ${opts.footer.lessonNum}\n` +
-          opts.footer.lessonTitle
-
-        await docs.documents.batchUpdate({
-          documentId:  docId,
-          requestBody: {
-            requests: [{
-              insertText: {
-                location: { segmentId: footerId, index: 1 },
-                text:      meta,
-              },
-            }],
-          },
-        })
-      }
-    }
-  } catch (footerErr) {
-    // Non-fatal — the doc was created successfully, footer metadata just won't appear.
-    console.warn('[createTranscriptDoc] Footer write skipped:', footerErr)
-  }
+  await docs.documents.batchUpdate({
+    documentId:  docId,
+    requestBody: {
+      requests: [{
+        insertText: {
+          location: { index: insertAt },
+          text:      meta,
+        },
+      }],
+    },
+  })
 
   return {
     docId,
