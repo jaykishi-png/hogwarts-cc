@@ -44,6 +44,8 @@ interface HistoryDoc {
   moduleNum:   string
   lessonNum:   string
   lessonTitle: string
+  transcript:  string
+  segments:    Segment[]
 }
 interface BatchHistoryEntry {
   id:           string
@@ -113,6 +115,49 @@ function generateVTT(segs: Segment[]) {
   return 'WEBVTT\n\n' + segs.filter(s => s.text.trim()).map((s, i) =>
     `${i + 1}\n${t(s.start)} --> ${t(s.end)}\n${s.text.trim()}`).join('\n\n')
 }
+
+// SCC (Scenarist Closed Captions) with EIA-608 odd-parity encoding
+function generateSCC(segs: Segment[]): string {
+  // Add odd parity to a 7-bit ASCII byte
+  function op(b: number): number {
+    let p = 0, x = b & 0x7f
+    while (x) { p ^= x & 1; x >>= 1 }
+    return p === 0 ? (b | 0x80) : (b & 0x7f)
+  }
+  // Encode text to parity-encoded hex word pairs
+  function encText(text: string): string[] {
+    const bytes = Array.from(text).map(c => {
+      const code = c.charCodeAt(0)
+      return op(code > 31 && code < 128 ? code : 32)
+    })
+    if (bytes.length % 2) bytes.push(op(32)) // pad to even
+    const words: string[] = []
+    for (let i = 0; i < bytes.length; i += 2)
+      words.push(bytes[i].toString(16).padStart(2,'0') + bytes[i+1].toString(16).padStart(2,'0'))
+    return words
+  }
+  // Timecode HH:MM:SS;FF (29.97fps drop-frame style)
+  function tc(s: number): string {
+    const h = Math.floor(s / 3600)
+    const m = Math.floor(s % 3600 / 60)
+    const sec = Math.floor(s % 60)
+    const fr = Math.min(29, Math.floor((s % 1) * 29.97))
+    return [h, m, sec].map(n => String(n).padStart(2,'0')).join(':') + ';' + String(fr).padStart(2,'0')
+  }
+
+  const lines = ['Scenarist_SCC V1.0', '', '']
+  for (const seg of segs.filter(s => s.text.trim())) {
+    const text = seg.text.trim().slice(0, 32)
+    const textWords = encText(text)
+    // Pop-on: erase NDM → RCL → PAC row 15 → text → flip memories
+    const cmd = ['94ad','94ad','9420','9420','947a','947a', ...textWords, '942c','942c'].join(' ')
+    lines.push(`${tc(seg.start)}\t${cmd}`)
+    lines.push(`${tc(seg.end)}\t942c 942c`)
+    lines.push('')
+  }
+  return lines.join('\n')
+}
+
 function dlText(content: string, filename: string, mime: string) {
   const a = document.createElement('a')
   a.href = URL.createObjectURL(new Blob([content], { type: mime }))
@@ -329,6 +374,7 @@ export function TranscriptionPanel({ pushLog }: Props) {
         completedDocs.push({
           docTitle: data.docTitle, docUrl: data.docUrl, fileName: item.file.name,
           moduleNum: item.moduleNum, lessonNum: item.lessonNum, lessonTitle: item.lessonTitle,
+          transcript: item.transcript, segments: item.segments,
         })
         successCount++
       } catch (err) {
@@ -631,27 +677,57 @@ export function TranscriptionPanel({ pushLog }: Props) {
                     </button>
 
                     {expanded && (
-                      <div className="border-t border-[#1e2030] px-3 py-2 space-y-1.5">
+                      <div className="border-t border-[#1e2030] px-3 py-2 space-y-2.5">
                         {entry.docs.length === 0 && <p className="text-[10px] text-gray-600">No docs were created in this batch.</p>}
-                        {entry.docs.map((doc, i) => (
-                          <div key={i} className="flex items-center gap-2 min-w-0">
-                            <FileText size={10} className="text-gray-600 flex-shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[10px] text-gray-300 truncate">{doc.docTitle}</p>
-                              {doc.lessonTitle && <p className="text-[9px] text-gray-600 truncate">{doc.lessonTitle}</p>}
+                        {entry.docs.map((doc, i) => {
+                          const name = doc.fileName.replace(/\.[^/.]+$/, '')
+                          return (
+                            <div key={i} className="space-y-1.5">
+                              {/* Doc title + open/preview */}
+                              <div className="flex items-center gap-2 min-w-0">
+                                <FileText size={10} className="text-gray-600 flex-shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-[10px] text-gray-300 truncate">{doc.docTitle}</p>
+                                  {doc.lessonTitle && <p className="text-[9px] text-gray-600 truncate">{doc.lessonTitle}</p>}
+                                </div>
+                                <div className="flex items-center gap-1 flex-shrink-0">
+                                  <button onClick={() => setPreviewDoc({ url: doc.docUrl, title: doc.docTitle })}
+                                    className="flex items-center gap-0.5 text-[9px] text-violet-500 hover:text-violet-300 px-1.5 py-1 rounded bg-violet-900/20 border border-violet-800/30 transition-colors">
+                                    <Eye size={9} />Preview
+                                  </button>
+                                  <a href={doc.docUrl} target="_blank" rel="noopener noreferrer"
+                                    className="flex items-center gap-0.5 text-[9px] text-emerald-500 hover:text-emerald-400 px-1.5 py-1 rounded bg-emerald-900/20 border border-emerald-800/30 transition-colors">
+                                    <ExternalLink size={9} />Doc
+                                  </a>
+                                </div>
+                              </div>
+                              {/* Download buttons */}
+                              {doc.transcript && (
+                                <div className="flex items-center gap-1 pl-4">
+                                  <span className="text-[9px] text-gray-700 mr-0.5">↓</span>
+                                  <button onClick={() => dlText(doc.transcript, `${name}.txt`, 'text/plain')}
+                                    className="flex items-center gap-0.5 text-[9px] text-gray-500 hover:text-gray-300 px-1.5 py-0.5 rounded hover:bg-white/5 transition-colors">
+                                    <Download size={8} />TXT
+                                  </button>
+                                  {doc.segments?.length > 0 && (<>
+                                    <button onClick={() => dlText(generateSRT(doc.segments), `${name}.srt`, 'text/plain')}
+                                      className="flex items-center gap-0.5 text-[9px] text-violet-500 hover:text-violet-300 px-1.5 py-0.5 rounded hover:bg-violet-900/20 border border-violet-800/30 transition-colors">
+                                      <FileCode size={8} />SRT
+                                    </button>
+                                    <button onClick={() => dlText(generateVTT(doc.segments), `${name}.vtt`, 'text/vtt')}
+                                      className="flex items-center gap-0.5 text-[9px] text-violet-500 hover:text-violet-300 px-1.5 py-0.5 rounded hover:bg-violet-900/20 border border-violet-800/30 transition-colors">
+                                      <FileCode size={8} />VTT
+                                    </button>
+                                    <button onClick={() => dlText(generateSCC(doc.segments), `${name}.scc`, 'text/plain')}
+                                      className="flex items-center gap-0.5 text-[9px] text-violet-500 hover:text-violet-300 px-1.5 py-0.5 rounded hover:bg-violet-900/20 border border-violet-800/30 transition-colors">
+                                      <FileCode size={8} />SCC
+                                    </button>
+                                  </>)}
+                                </div>
+                              )}
                             </div>
-                            <div className="flex items-center gap-1 flex-shrink-0">
-                              <button onClick={() => setPreviewDoc({ url: doc.docUrl, title: doc.docTitle })}
-                                className="flex items-center gap-0.5 text-[9px] text-violet-500 hover:text-violet-300 px-1.5 py-1 rounded bg-violet-900/20 border border-violet-800/30 transition-colors">
-                                <Eye size={9} />Preview
-                              </button>
-                              <a href={doc.docUrl} target="_blank" rel="noopener noreferrer"
-                                className="flex items-center gap-0.5 text-[9px] text-emerald-500 hover:text-emerald-400 px-1.5 py-1 rounded bg-emerald-900/20 border border-emerald-800/30 transition-colors">
-                                <ExternalLink size={9} />Open
-                              </a>
-                            </div>
-                          </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     )}
                   </div>
