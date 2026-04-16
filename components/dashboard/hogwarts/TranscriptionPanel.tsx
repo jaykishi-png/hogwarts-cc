@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useId } from 'react'
 import {
   Mic, Upload, Check, Loader2, X, FileText, FileCode,
-  Download, BookOpen, ExternalLink, FolderOpen, ChevronDown,
+  Download, BookOpen, ExternalLink, FolderOpen, ChevronDown, Eye, EyeOff,
 } from 'lucide-react'
 import { TRANSCRIPT_TEMPLATES } from '@/config/transcript-templates'
 
@@ -100,6 +100,12 @@ function makeItem(file: File, lessonIdx: number): BatchItem {
   }
 }
 
+// ─── Preview URL ──────────────────────────────────────────────────────────────
+// Converts /edit URL → /preview for iframe embedding
+function previewUrl(editUrl: string) {
+  return editUrl.replace('/edit', '/preview')
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function TranscriptionPanel({ pushLog }: Props) {
@@ -114,6 +120,11 @@ export function TranscriptionPanel({ pushLog }: Props) {
   const [folderUrl,   setFolderUrl]   = useState('')
   const [folderName,  setFolderName]  = useState('')
   const [globalError, setGlobalError] = useState('')
+
+  // Preview modal state
+  const [previewItem, setPreviewItem] = useState<BatchItem | null>(null)
+
+  const isLocked = panelStage === 'creating' || panelStage === 'done'
 
   // ── Item updater ───────────────────────────────────────────────────────────
   const updateItem = useCallback((id: string, patch: Partial<BatchItem>) => {
@@ -209,9 +220,7 @@ export function TranscriptionPanel({ pushLog }: Props) {
   const transcribeAll = useCallback(async () => {
     setPanelStage('transcribing')
     setGlobalError('')
-    // We need the snapshot at call time — read from ref via functional update pattern
     setItems(prev => {
-      // kick off async transcription using the current items list
       ;(async () => {
         for (const item of prev) {
           if (item.txStatus !== 'pending') continue
@@ -290,13 +299,14 @@ export function TranscriptionPanel({ pushLog }: Props) {
     setItems([]); setPanelStage('idle'); setTemplateKey(TRANSCRIPT_TEMPLATES[0].key)
     setCourseTitle(TRANSCRIPT_TEMPLATES[0].courseTitle)
     setCourseLevel(''); setFolderUrl(''); setFolderName(''); setGlobalError('')
+    setPreviewItem(null)
   }, [])
 
   // ── selectedTemplate ───────────────────────────────────────────────────────
   const selectedTemplate = TRANSCRIPT_TEMPLATES.find(t => t.key === templateKey)
 
   // ── docNamePreview ─────────────────────────────────────────────────────────
-  const docPreview = (item: BatchItem) =>
+  const docNamePreview = (item: BatchItem) =>
     `${templateKey} M${pad2(item.moduleNum || '1')}L${pad2(item.lessonNum || '1')} Transcript`
 
   // ── Export buttons ─────────────────────────────────────────────────────────
@@ -331,127 +341,110 @@ export function TranscriptionPanel({ pushLog }: Props) {
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="flex-1 min-w-0 flex flex-col gap-3 min-h-0">
-
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="flex-shrink-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-4">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-violet-900/40 border border-violet-800/40 flex items-center justify-center">
-              <Mic size={13} className="text-violet-400" />
+    <>
+      {/* ── Preview modal ──────────────────────────────────────────────────── */}
+      {previewItem?.docUrl && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-[#07080e]">
+          {/* Modal header */}
+          <div className="flex items-center justify-between px-4 py-2.5 bg-[#0d0f1a] border-b border-[#1e2030] flex-shrink-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <FileText size={13} className="text-emerald-400 flex-shrink-0" />
+              <span className="text-xs font-semibold text-gray-200 truncate">{previewItem.docTitle}</span>
             </div>
-            <div>
-              <p className="text-xs font-bold text-gray-200">Batch Transcribe</p>
-              <p className="text-[10px] text-gray-600">Whisper · multi-file · Google Docs</p>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <a
+                href={previewItem.docUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300 px-2.5 py-1.5 rounded-lg bg-emerald-900/30 border border-emerald-800/40 transition-colors"
+              >
+                <ExternalLink size={10} />Open in Google Docs
+              </a>
+              <button
+                onClick={() => setPreviewItem(null)}
+                className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-gray-300 px-2.5 py-1.5 rounded-lg hover:bg-white/5 border border-[#2a2d3a] transition-colors"
+              >
+                <EyeOff size={10} />Close
+              </button>
             </div>
           </div>
-          {panelStage !== 'idle' && (
-            <button
-              onClick={reset}
-              className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-gray-400 transition-colors px-2 py-1 rounded hover:bg-white/5"
-            >
-              <X size={11} />New Batch
-            </button>
-          )}
-        </div>
-
-        {/* Drop zone */}
-        <div
-          onDrop={onDrop}
-          onDragOver={e => e.preventDefault()}
-          onClick={() => fileInput.current?.click()}
-          className="border-2 border-dashed border-[#2a2d3a] hover:border-violet-800/60 rounded-xl p-5 text-center cursor-pointer transition-colors group"
-        >
-          <Upload size={18} className="mx-auto text-gray-700 group-hover:text-violet-800/60 mb-1.5 transition-colors" />
-          <p className="text-xs text-gray-600 group-hover:text-gray-500 transition-colors">
-            Drop video/audio files or <span className="text-violet-400">click to browse</span>
-          </p>
-          <p className="text-[10px] text-gray-700 mt-0.5">MP4, MOV, MKV, MP3, WAV, M4A — multiple files OK</p>
-          <input
-            ref={fileInput} id={`${uid}-file`} type="file"
-            accept="video/*,audio/*" multiple className="hidden"
-            onChange={e => { if (e.target.files?.length) addFiles(Array.from(e.target.files)) }}
+          {/* Iframe */}
+          <iframe
+            src={previewUrl(previewItem.docUrl)}
+            className="flex-1 w-full border-0"
+            title={previewItem.docTitle}
+            allowFullScreen
           />
         </div>
+      )}
 
-        {globalError && (
-          <p className="mt-2 text-[10px] text-red-400">{globalError}</p>
-        )}
-      </div>
+      <div className="flex-1 min-w-0 flex flex-col gap-3 min-h-0 overflow-y-auto">
 
-      {/* ── Queued file list ────────────────────────────────────────────────── */}
-      {(panelStage === 'queued' || panelStage === 'transcribing') && items.length > 0 && (
+        {/* ── Header + Drop Zone ───────────────────────────────────────────── */}
         <div className="flex-shrink-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-4">
           <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-semibold text-gray-300">
-              {items.length} file{items.length !== 1 ? 's' : ''} queued
-            </p>
-            {panelStage === 'queued' && (
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-violet-900/40 border border-violet-800/40 flex items-center justify-center">
+                <Mic size={13} className="text-violet-400" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-gray-200">Batch Transcribe</p>
+                <p className="text-[10px] text-gray-600">Whisper · multi-file · Google Docs</p>
+              </div>
+            </div>
+            {panelStage !== 'idle' && (
               <button
-                onClick={transcribeAll}
-                className="flex items-center gap-1.5 bg-violet-800/80 hover:bg-violet-700 text-white rounded-lg px-4 py-2 text-xs font-semibold transition-colors"
+                onClick={reset}
+                className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-gray-400 transition-colors px-2 py-1 rounded hover:bg-white/5"
               >
-                <Mic size={12} />Transcribe All
+                <X size={11} />New Batch
               </button>
             )}
           </div>
 
-          <div className="space-y-2">
-            {items.map(item => (
-              <div key={item.id} className="bg-[#07080e] border border-[#1e2030] rounded-lg px-3 py-2.5">
-                <div className="flex items-center gap-2 min-w-0">
-                  {item.txStatus === 'pending'      && <FileText size={12} className="text-gray-600 flex-shrink-0" />}
-                  {item.txStatus === 'transcribing' && <Loader2  size={12} className="text-violet-400 animate-spin flex-shrink-0" />}
-                  {item.txStatus === 'done'         && <Check    size={12} className="text-violet-400 flex-shrink-0" />}
-                  {item.txStatus === 'error'        && <X        size={12} className="text-red-400 flex-shrink-0" />}
-                  <span className="text-xs text-gray-300 truncate flex-1">{truncate(item.file.name, 40)}</span>
-                  <span className="text-[10px] text-gray-600 flex-shrink-0">{(item.file.size / 1_000_000).toFixed(1)} MB</span>
-                  {panelStage === 'queued' && item.txStatus === 'pending' && (
-                    <button onClick={() => removeItem(item.id)} className="text-gray-700 hover:text-gray-500 flex-shrink-0 transition-colors">
-                      <X size={11} />
-                    </button>
-                  )}
-                </div>
-                {item.txStatus === 'transcribing' && (
-                  <div className="mt-2 space-y-1">
-                    <div className="flex justify-between">
-                      <span className="text-[10px] text-gray-600">Transcribing…</span>
-                      <span className="text-[10px] text-gray-700">{item.txChunk}</span>
-                    </div>
-                    <div className="h-1 bg-[#1e2030] rounded-full overflow-hidden">
-                      <div className="h-full bg-violet-700 rounded-full transition-all duration-300" style={{ width: `${item.txProgress}%` }} />
-                    </div>
-                  </div>
-                )}
-                {item.txStatus === 'error' && (
-                  <p className="mt-1 text-[10px] text-red-400 truncate">{item.txError}</p>
-                )}
-              </div>
-            ))}
+          {/* Drop zone */}
+          <div
+            onDrop={onDrop}
+            onDragOver={e => e.preventDefault()}
+            onClick={() => fileInput.current?.click()}
+            className="border-2 border-dashed border-[#2a2d3a] hover:border-violet-800/60 rounded-xl p-5 text-center cursor-pointer transition-colors group"
+          >
+            <Upload size={18} className="mx-auto text-gray-700 group-hover:text-violet-800/60 mb-1.5 transition-colors" />
+            <p className="text-xs text-gray-600 group-hover:text-gray-500 transition-colors">
+              Drop video/audio files or <span className="text-violet-400">click to browse</span>
+            </p>
+            <p className="text-[10px] text-gray-700 mt-0.5">MP4, MOV, MKV, MP3, WAV, M4A — multiple files OK</p>
+            <input
+              ref={fileInput} id={`${uid}-file`} type="file"
+              accept="video/*,audio/*" multiple className="hidden"
+              onChange={e => { if (e.target.files?.length) addFiles(Array.from(e.target.files)) }}
+            />
           </div>
-        </div>
-      )}
 
-      {/* ── Metadata form ───────────────────────────────────────────────────── */}
-      {(panelStage === 'metadata' || panelStage === 'creating' || panelStage === 'done') && (
-        <div className="flex-shrink-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-4 space-y-4">
-
-          {/* Folder success banner */}
-          {folderUrl && (
-            <div className="flex items-center gap-2 bg-emerald-900/20 border border-emerald-800/40 rounded-lg px-3 py-2">
-              <FolderOpen size={12} className="text-emerald-400 flex-shrink-0" />
-              <span className="text-xs text-emerald-300 flex-1 truncate">{folderName}</span>
-              <a href={folderUrl} target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300 transition-colors flex-shrink-0">
-                Open <ExternalLink size={10} />
-              </a>
-            </div>
+          {globalError && (
+            <p className="mt-2 text-[10px] text-red-400">{globalError}</p>
           )}
+        </div>
 
-          {/* Global fields */}
-          <div>
-            <p className="text-xs font-semibold text-gray-300 mb-2">Global Settings</p>
+        {/* ── Global Settings (visible from queued onwards) ─────────────────── */}
+        {panelStage !== 'idle' && (
+          <div className="flex-shrink-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-4 space-y-3">
+            <p className="text-xs font-semibold text-gray-300">Global Settings</p>
+
+            {/* Folder success banner */}
+            {folderUrl && (
+              <div className="flex items-center gap-2 bg-emerald-900/20 border border-emerald-800/40 rounded-lg px-3 py-2">
+                <FolderOpen size={12} className="text-emerald-400 flex-shrink-0" />
+                <span className="text-xs text-emerald-300 flex-1 truncate">{folderName}</span>
+                <a href={folderUrl} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300 transition-colors flex-shrink-0">
+                  Open <ExternalLink size={10} />
+                </a>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-2">
+              {/* Course template */}
               <div>
                 <label className="block text-[10px] text-gray-500 mb-1">Course</label>
                 <div className="relative">
@@ -463,8 +456,8 @@ export function TranscriptionPanel({ pushLog }: Props) {
                       const tpl = TRANSCRIPT_TEMPLATES.find(t => t.key === key)
                       if (tpl) setCourseTitle(tpl.courseTitle)
                     }}
-                    disabled={panelStage === 'creating' || panelStage === 'done'}
-                    className="w-full bg-[#07080e] border border-[#1e2030] rounded-lg px-3 py-2 text-xs text-gray-300 appearance-none cursor-pointer focus:outline-none focus:border-emerald-800/60 disabled:opacity-50"
+                    disabled={isLocked}
+                    className="w-full bg-[#07080e] border border-[#1e2030] rounded-lg px-3 py-2 text-xs text-gray-300 appearance-none cursor-pointer focus:outline-none focus:border-violet-800/60 disabled:opacity-50"
                   >
                     {TRANSCRIPT_TEMPLATES.map(t => (
                       <option key={t.key} value={t.key}>{t.label}</option>
@@ -473,97 +466,169 @@ export function TranscriptionPanel({ pushLog }: Props) {
                   <ChevronDown size={11} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" />
                 </div>
               </div>
-              <div>
-                <label className="block text-[10px] text-gray-500 mb-1">Course Title</label>
-                <input
-                  type="text" value={courseTitle}
-                  onChange={e => setCourseTitle(e.target.value)}
-                  placeholder="e.g. Launching Email Campaigns"
-                  disabled={panelStage === 'creating' || panelStage === 'done'}
-                  className="w-full bg-[#07080e] border border-[#1e2030] rounded-lg px-3 py-2 text-xs text-gray-300 focus:outline-none focus:border-emerald-800/60 placeholder:text-gray-700 disabled:opacity-50"
-                />
-              </div>
+
+              {/* Course Level */}
               <div>
                 <label className="block text-[10px] text-gray-500 mb-1">Course Level</label>
                 <input
                   type="text" value={courseLevel}
                   onChange={e => setCourseLevel(e.target.value)}
                   placeholder="Beginner"
-                  disabled={panelStage === 'creating' || panelStage === 'done'}
-                  className="w-full bg-[#07080e] border border-[#1e2030] rounded-lg px-3 py-2 text-xs text-gray-300 focus:outline-none focus:border-emerald-800/60 placeholder:text-gray-700 disabled:opacity-50"
+                  disabled={isLocked}
+                  className="w-full bg-[#07080e] border border-[#1e2030] rounded-lg px-3 py-2 text-xs text-gray-300 focus:outline-none focus:border-violet-800/60 placeholder:text-gray-700 disabled:opacity-50"
+                />
+              </div>
+
+              {/* Course Title — full width */}
+              <div className="col-span-2">
+                <label className="block text-[10px] text-gray-500 mb-1">Course Title</label>
+                <input
+                  type="text" value={courseTitle}
+                  onChange={e => setCourseTitle(e.target.value)}
+                  placeholder="e.g. Launching Email Campaigns"
+                  disabled={isLocked}
+                  className="w-full bg-[#07080e] border border-[#1e2030] rounded-lg px-3 py-2 text-xs text-gray-300 focus:outline-none focus:border-violet-800/60 placeholder:text-gray-700 disabled:opacity-50"
                 />
               </div>
             </div>
           </div>
+        )}
 
-          {/* Per-file cards */}
-          <div>
-            <p className="text-xs font-semibold text-gray-300 mb-2">Per-File Metadata</p>
-            <div className="space-y-2">
+        {/* ── File list (all active stages) ────────────────────────────────── */}
+        {panelStage !== 'idle' && items.length > 0 && (
+          <div className="flex-shrink-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-semibold text-gray-300">
+                {items.length} file{items.length !== 1 ? 's' : ''}
+                {panelStage === 'metadata' || panelStage === 'creating' || panelStage === 'done'
+                  ? ' — fill in metadata below then create docs'
+                  : ' queued — fill in metadata, then transcribe'}
+              </p>
+              {panelStage === 'queued' && (
+                <button
+                  onClick={transcribeAll}
+                  className="flex items-center gap-1.5 bg-violet-800/80 hover:bg-violet-700 text-white rounded-lg px-4 py-2 text-xs font-semibold transition-colors"
+                >
+                  <Mic size={12} />Transcribe All
+                </button>
+              )}
+              {panelStage === 'transcribing' && (
+                <div className="flex items-center gap-1.5 text-[10px] text-violet-400">
+                  <Loader2 size={11} className="animate-spin" />Transcribing…
+                </div>
+              )}
+            </div>
+
+            {/* Scrollable file cards */}
+            <div className="space-y-2 max-h-[420px] overflow-y-auto pr-0.5">
               {items.map(item => (
                 <div key={item.id} className="bg-[#07080e] border border-[#1e2030] rounded-lg p-3 space-y-2">
 
-                  {/* File header row */}
+                  {/* ── File name row ── */}
                   <div className="flex items-center gap-2 min-w-0">
-                    <FileText size={12} className="text-violet-400 flex-shrink-0" />
-                    <span className="text-xs text-gray-300 truncate flex-1">{truncate(item.file.name, 35)}</span>
-                    {item.txStatus === 'done' && (
-                      <span className="text-[10px] text-gray-600 flex-shrink-0">
-                        {wordCount(item.transcript).toLocaleString()} words
-                      </span>
-                    )}
+                    {item.txStatus === 'pending'      && <FileText size={12} className="text-gray-600 flex-shrink-0" />}
+                    {item.txStatus === 'transcribing' && <Loader2  size={12} className="text-violet-400 animate-spin flex-shrink-0" />}
+                    {item.txStatus === 'done'         && <Check    size={12} className="text-violet-400 flex-shrink-0" />}
+                    {item.txStatus === 'error'        && <X        size={12} className="text-red-400 flex-shrink-0" />}
+                    <span className="text-xs text-gray-300 truncate flex-1">{truncate(item.file.name, 40)}</span>
+                    <span className="text-[10px] text-gray-600 flex-shrink-0">
+                      {item.txStatus === 'done'
+                        ? `${wordCount(item.transcript).toLocaleString()} words`
+                        : `${(item.file.size / 1_000_000).toFixed(1)} MB`}
+                    </span>
                     <ExportButtons item={item} />
+                    {!isLocked && item.txStatus === 'pending' && (
+                      <button onClick={() => removeItem(item.id)} className="text-gray-700 hover:text-gray-500 flex-shrink-0 transition-colors ml-1">
+                        <X size={11} />
+                      </button>
+                    )}
                   </div>
 
-                  {/* Module / Lesson / preview row */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <div className="flex items-center gap-1.5">
-                      <label className="text-[10px] text-gray-600">Module</label>
+                  {/* ── Progress bar (transcribing) ── */}
+                  {item.txStatus === 'transcribing' && (
+                    <div className="space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-[10px] text-gray-600">Transcribing…</span>
+                        <span className="text-[10px] text-gray-700">{item.txChunk}</span>
+                      </div>
+                      <div className="h-1 bg-[#1e2030] rounded-full overflow-hidden">
+                        <div className="h-full bg-violet-700 rounded-full transition-all duration-300" style={{ width: `${item.txProgress}%` }} />
+                      </div>
+                    </div>
+                  )}
+
+                  {item.txStatus === 'error' && (
+                    <p className="text-[10px] text-red-400 truncate">{item.txError}</p>
+                  )}
+
+                  {/* ── Footer metadata fields (always visible) ── */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] text-gray-600 mb-1">Module #</label>
                       <input
                         type="number" min="1" value={item.moduleNum}
                         onChange={e => updateItem(item.id, { moduleNum: e.target.value })}
-                        disabled={panelStage === 'creating' || panelStage === 'done'}
-                        className="w-14 bg-[#0d0f1a] border border-[#2a2d3a] rounded px-2 py-1 text-xs text-gray-300 focus:outline-none focus:border-emerald-800/60 disabled:opacity-50"
+                        disabled={isLocked}
+                        className="w-full bg-[#0d0f1a] border border-[#2a2d3a] rounded px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-violet-800/60 disabled:opacity-50"
                       />
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <label className="text-[10px] text-gray-600">Lesson</label>
+                    <div>
+                      <label className="block text-[10px] text-gray-600 mb-1">Lesson #</label>
                       <input
                         type="number" min="1" value={item.lessonNum}
                         onChange={e => updateItem(item.id, { lessonNum: e.target.value })}
-                        disabled={panelStage === 'creating' || panelStage === 'done'}
-                        className="w-14 bg-[#0d0f1a] border border-[#2a2d3a] rounded px-2 py-1 text-xs text-gray-300 focus:outline-none focus:border-emerald-800/60 disabled:opacity-50"
+                        disabled={isLocked}
+                        className="w-full bg-[#0d0f1a] border border-[#2a2d3a] rounded px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-violet-800/60 disabled:opacity-50"
                       />
                     </div>
-                    <span className="text-[10px] text-gray-600">→</span>
-                    <span className="text-[10px] text-gray-500 font-mono">{docPreview(item)}</span>
+                    <div className="col-span-2">
+                      <label className="block text-[10px] text-gray-600 mb-1">Lesson Title</label>
+                      <input
+                        type="text" value={item.lessonTitle}
+                        onChange={e => updateItem(item.id, { lessonTitle: e.target.value })}
+                        placeholder="e.g. Introduction to Email Marketing"
+                        disabled={isLocked}
+                        className="w-full bg-[#0d0f1a] border border-[#2a2d3a] rounded px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-violet-800/60 placeholder:text-gray-700 disabled:opacity-50"
+                      />
+                    </div>
                   </div>
 
-                  {/* Lesson title */}
-                  <input
-                    type="text" value={item.lessonTitle}
-                    onChange={e => updateItem(item.id, { lessonTitle: e.target.value })}
-                    placeholder="Lesson Title (e.g. Introduction to Email Marketing)"
-                    disabled={panelStage === 'creating' || panelStage === 'done'}
-                    className="w-full bg-[#0d0f1a] border border-[#2a2d3a] rounded px-2 py-1 text-xs text-gray-300 focus:outline-none focus:border-emerald-800/60 placeholder:text-gray-700 disabled:opacity-50"
-                  />
+                  {/* ── Doc name preview ── */}
+                  <div className="flex items-center gap-1.5 text-[10px] text-gray-600">
+                    <span>→ doc will be named:</span>
+                    <span className="font-mono text-gray-500">{docNamePreview(item)}</span>
+                  </div>
 
-                  {/* Doc creation status */}
+                  {/* ── Doc creation status / links / preview ── */}
                   {item.docStatus === 'creating' && (
                     <div className="flex items-center gap-1.5 text-[10px] text-emerald-400">
                       <Loader2 size={11} className="animate-spin" />Creating doc…
                     </div>
                   )}
+
                   {item.docStatus === 'done' && item.docUrl && (
-                    <div className="flex items-center gap-2 bg-emerald-900/20 border border-emerald-800/30 rounded px-2 py-1.5">
+                    <div className="flex items-center gap-2 bg-emerald-900/20 border border-emerald-800/30 rounded-lg px-3 py-2">
                       <Check size={11} className="text-emerald-400 flex-shrink-0" />
-                      <span className="text-[10px] text-emerald-300 flex-1 truncate">{item.docTitle}</span>
-                      <a href={item.docUrl} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-0.5 text-[10px] text-emerald-400 hover:text-emerald-300 transition-colors flex-shrink-0">
-                        Open <ExternalLink size={9} />
-                      </a>
+                      <span className="text-[10px] text-emerald-300 flex-1 truncate font-medium">{item.docTitle}</span>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button
+                          onClick={() => setPreviewItem(item)}
+                          className="flex items-center gap-1 text-[10px] text-violet-400 hover:text-violet-300 px-2 py-1 rounded bg-violet-900/30 border border-violet-800/40 transition-colors"
+                        >
+                          <Eye size={9} />Preview
+                        </button>
+                        <a
+                          href={item.docUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300 px-2 py-1 rounded bg-emerald-900/30 border border-emerald-800/40 transition-colors"
+                        >
+                          <ExternalLink size={9} />Open
+                        </a>
+                      </div>
                     </div>
                   )}
+
                   {item.docStatus === 'error' && (
                     <p className="text-[10px] text-red-400">{item.docError}</p>
                   )}
@@ -571,32 +636,40 @@ export function TranscriptionPanel({ pushLog }: Props) {
               ))}
             </div>
           </div>
+        )}
 
-          {/* Create All Docs button */}
-          {(panelStage === 'metadata') && (
+        {/* ── Action bar ───────────────────────────────────────────────────── */}
+        {panelStage === 'metadata' && (
+          <div className="flex-shrink-0">
             <button
               onClick={createAllDocs}
               disabled={!selectedTemplate || items.every(it => it.txStatus !== 'done')}
-              className="w-full flex items-center justify-center gap-2 bg-emerald-900/60 hover:bg-emerald-800/60 disabled:opacity-40 disabled:cursor-not-allowed border border-emerald-800/40 text-emerald-300 rounded-lg px-4 py-2.5 text-xs font-semibold transition-colors"
+              className="w-full flex items-center justify-center gap-2 bg-emerald-900/60 hover:bg-emerald-800/60 disabled:opacity-40 disabled:cursor-not-allowed border border-emerald-800/40 text-emerald-300 rounded-xl px-4 py-3 text-xs font-semibold transition-colors"
             >
               <BookOpen size={13} />Create All Docs
             </button>
-          )}
+          </div>
+        )}
 
-          {panelStage === 'creating' && (
-            <div className="flex items-center justify-center gap-2 text-xs text-emerald-400 py-1">
-              <Loader2 size={13} className="animate-spin" />Creating docs…
-            </div>
-          )}
+        {panelStage === 'creating' && (
+          <div className="flex-shrink-0 flex items-center justify-center gap-2 text-xs text-emerald-400 py-2">
+            <Loader2 size={13} className="animate-spin" />Creating docs…
+          </div>
+        )}
 
-          {panelStage === 'done' && (
-            <div className="flex items-center gap-2 text-[10px] text-gray-500">
-              <Check size={11} className="text-emerald-400" />
-              All done — {items.filter(i => i.docStatus === 'done').length} / {items.length} docs created.
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+        {panelStage === 'done' && (
+          <div className="flex-shrink-0 flex items-center gap-2 text-[10px] text-gray-500 bg-[#0d0f1a] rounded-xl border border-[#1e2030] px-4 py-3">
+            <Check size={11} className="text-emerald-400" />
+            <span>All done — {items.filter(i => i.docStatus === 'done').length} / {items.length} docs created.</span>
+            {folderUrl && (
+              <a href={folderUrl} target="_blank" rel="noopener noreferrer"
+                className="ml-auto flex items-center gap-1 text-emerald-400 hover:text-emerald-300 transition-colors">
+                <FolderOpen size={10} />View Folder <ExternalLink size={9} />
+              </a>
+            )}
+          </div>
+        )}
+      </div>
+    </>
   )
 }
