@@ -442,7 +442,9 @@ export function TranscriptionPanel({ pushLog }: Props) {
         </div>
       )}
 
-      <div className="flex-1 min-w-0 flex flex-col gap-3 min-h-0 overflow-y-auto">
+      {/* Scroll container — height is bounded by the flex parent; inner div grows freely */}
+      <div className="flex-1 min-w-0 min-h-0 overflow-y-auto [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#2a2d3a] [&::-webkit-scrollbar-thumb]:rounded-full">
+      <div className="flex flex-col gap-3 pb-3">
 
         {/* ── Header card ────────────────────────────────────────────────────── */}
         <div className="flex-shrink-0 bg-[#0d0f1a] rounded-xl border border-[#1e2030] p-4 space-y-3">
@@ -906,7 +908,8 @@ export function TranscriptionPanel({ pushLog }: Props) {
             )}
           </div>
         )}
-      </div>
+      </div>{/* end flex-col content */}
+      </div>{/* end scroll container */}
     </>
   )
 }

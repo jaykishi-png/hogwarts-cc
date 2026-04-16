@@ -1097,7 +1097,9 @@ export function HogwartsShell() {
             {/* ── Transcription Panel ───────────────────────────────────────── */}
             {activeTool === 'transcribe' && (
               <PanelErrorBoundary panelName="Transcribe">
-                <TranscriptionPanel pushLog={pushLog} />
+                <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
+                  <TranscriptionPanel pushLog={pushLog} />
+                </div>
               </PanelErrorBoundary>
             )}
 
