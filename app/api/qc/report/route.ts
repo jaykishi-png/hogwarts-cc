@@ -18,6 +18,17 @@ function secondsToTC(s: number, fps: number = 24): string {
   return [hh, mm, ss, ff].map(n => n.toString().padStart(2, '0')).join(':')
 }
 
+/** Safety-net: normalise any stray timecode formats the model emits → [TC: HH:MM:SS:FF] */
+function normalizeTCs(text: string, fps: number = 24): string {
+  return text
+    .replace(/\[(\d+)m\s*(\d+)s\]/g,          (_, m, s)  => `[TC: ${secondsToTC(+m * 60 + +s, fps)}]`)
+    .replace(/\[(\d+)m\]/g,                    (_, m)     => `[TC: ${secondsToTC(+m * 60, fps)}]`)
+    .replace(/\[(\d+)s[-\u2013](\d+)s\]/g,    (_, s1)    => `[TC: ${secondsToTC(+s1, fps)}]`)
+    .replace(/\[(\d+)s\]/g,                    (_, s)     => `[TC: ${secondsToTC(+s, fps)}]`)
+    .replace(/(?<!\bTC: (?:\d{2}:){0,2})\[(\d{1,2}):(\d{2})\](?!:\d)/g,
+             (_, m, s) => `[TC: ${secondsToTC(+m * 60 + +s, fps)}]`)
+}
+
 export async function POST(req: NextRequest) {
   try {
     const {
@@ -26,24 +37,24 @@ export async function POST(req: NextRequest) {
       visualFindings,
       transcript,
       segments,
-      jumpCuts,
+      audioQualityFindings,
       fps = 24,
     } = await req.json() as {
-      fileName:       string
-      duration:       number
-      visualFindings: string[]
-      transcript:     string
-      segments?:      Segment[]
-      jumpCuts:       number[]
-      fps?:           number
+      fileName:             string
+      duration:             number
+      visualFindings:       string[]
+      transcript:           string
+      segments?:            Segment[]
+      audioQualityFindings?: string[]
+      jumpCuts?:            number[]  // accepted but not forwarded — AI Vision is the sole source of truth
+      fps?:                 number
     }
 
-    const allVisual = visualFindings.filter(Boolean).join('\n').trim()
-
-    // Convert jump cuts to SMPTE
-    const jumpBlock = jumpCuts.length
-      ? jumpCuts.map(t => `[TC: ${secondsToTC(t, fps)}]`).join(', ')
-      : 'None detected'
+    const allVisual   = visualFindings.filter(Boolean).join('\n').trim()
+    const allAudioQC  = normalizeTCs(
+      (audioQualityFindings ?? []).filter(Boolean).join('\n').trim(),
+      fps
+    )
 
     // Build audio analysis content — prefer timestamped segments over plain text
     let audioQcContent: string
@@ -67,7 +78,7 @@ export async function POST(req: NextRequest) {
           role: 'user',
           content: `You are a senior video editor doing audio QC. Analyze this transcript for EDITING MISTAKES only.
 
-**CRITICAL TIMECODE RULE:** Every issue you report MUST begin with [TC: HH:MM:SS:FF] using the timecode of the affected line. Never omit it.
+**CRITICAL TIMECODE RULE:** Every issue MUST begin with [TC: HH:MM:SS:FF] — example: [TC: 00:01:34:12]. NEVER use seconds notation like [94s] or [2m]. NEVER omit the TC prefix. Copy the timecode exactly from the transcript segments above.
 
 Check for these audio editing mistakes:
 
@@ -93,7 +104,9 @@ ${audioQcContent}`,
         max_tokens: 800,
       })
       const raw = audioRes.choices[0].message.content ?? ''
-      audioFindings = raw === 'AUDIO_CLEAN' ? '✅ No audio editing mistakes detected.' : raw
+      audioFindings = raw === 'AUDIO_CLEAN'
+        ? '✅ No audio editing mistakes detected.'
+        : normalizeTCs(raw, fps)
     }
 
     const mins = Math.floor(duration / 60)
@@ -106,23 +119,33 @@ ${audioQcContent}`,
       messages: [
         {
           role: 'system',
-          content: `You are HARRY, a senior video editor and creative review agent. Write precise, professional QC reports in markdown. Every ⚠️ issue and every Recommended Action MUST include a [TC: HH:MM:SS:FF] timecode. No note without a timecode.`,
+          content: `You are HARRY, a senior video editor and creative review agent. Write precise, professional QC reports in markdown.
+
+TIMECODE RULES — ABSOLUTE:
+- Every ⚠️ issue and every Recommended Action MUST include [TC: HH:MM:SS:FF].
+- Copy timecodes EXACTLY from the findings — do NOT convert to seconds ([94s]) or minutes ([2m34s]).
+- Format is always: [TC: HH:MM:SS:FF] — example: [TC: 00:01:34:12]
+- Never omit the TC prefix. Never write bare numbers. No exceptions.`,
         },
         {
           role: 'user',
           content: `Write a QC report for "${fileName}" (duration: ${durationStr}, ${frameCount} frames analysed at 1fps, ${fps}fps source).
 
-## Visual Findings (frame-by-frame GPT-4o Vision)
+## Visual Findings (frame-by-frame GPT-4o Vision — AI-verified)
 ${allVisual || '✅ No visual issues detected across all frames.'}
 
-## Jump Cut Candidates (pixel-diff detected, AI-verified above)
-${jumpBlock}
-
-## Audio Editing QC (Whisper + GPT-4o)
+## Audio Editing QC (Whisper + GPT-4o text analysis)
 ${audioFindings}
+
+## Audio Quality QC (GPT-4o Audio — actual listening)
+${allAudioQC || '✅ No audio quality issues detected.'}
 
 ---
 Use this exact structure. Every ⚠️ issue MUST have [TC: HH:MM:SS:FF]. Every Recommended Action bullet MUST have [TC: HH:MM:SS:FF].
+
+JUMP CUTS RULE: Do NOT create a separate "## Jump Cuts" section. Any confirmed jump cuts belong inside ## Visual under a "Jump Cuts" sub-heading. Only include jump cuts explicitly flagged in Visual Findings — never list raw timestamps as a jump cut inventory.
+
+TIMECODE FORMAT RULE: Every single timecode in your output MUST use [TC: HH:MM:SS:FF] format. Example: [TC: 00:01:34:12]. If the source findings say [TC: 00:01:34:12], copy it exactly. NEVER shorten to [94s], [1m34s], [1:34], or any other format. This is non-negotiable.
 
 # QC Report — ${fileName}
 
@@ -133,7 +156,7 @@ Use this exact structure. Every ⚠️ issue MUST have [TC: HH:MM:SS:FF]. Every 
 ---
 
 ## Visual
-[Summarise visual findings grouped by type: Typos, Exposure, Framing, Artifacts, Jump Cuts. Every issue: ⚠️ [TC: HH:MM:SS:FF] description. If clean: "✅ No visual issues detected."]
+[Summarise visual findings grouped by type. Use sub-headings only for categories that have issues: Typos, Exposure, Framing, Artifacts, Jump Cuts. Every issue: ⚠️ [TC: HH:MM:SS:FF] description — timecode in FULL HH:MM:SS:FF format, never shortened. If no visual issues: "✅ No visual issues detected."]
 
 ## Color
 [Dedicated color grading section. List every color issue found, grouped into these sub-categories if present:
@@ -144,21 +167,26 @@ Use this exact structure. Every ⚠️ issue MUST have [TC: HH:MM:SS:FF]. Every 
 - **Color Cast** — unwanted tint
 Every issue: ⚠️ [TC: HH:MM:SS:FF] description. If no color issues: "✅ Color grading consistent throughout."]
 
-## Audio
-[Summarise audio editing findings. Every issue: ⚠️ [TC: HH:MM:SS:FF] description. If clean: "✅ No audio editing mistakes detected."]
+## Audio — Editing
+[Summarise audio editing findings from transcript analysis. Every issue: ⚠️ [TC: HH:MM:SS:FF] description. If clean: "✅ No audio editing mistakes detected."]
+
+## Audio — Quality
+[Summarise audio quality findings from GPT-4o Audio listening pass. Group by type if multiple: Clipping, Background Noise, Hum, Pops/Clicks, Volume Jumps, Room Tone Shifts, Dropouts, Compression, Rumble, Mic Issues. Every issue: ⚠️ [TC: HH:MM:SS:FF] description. If clean: "✅ No audio quality issues detected."]
 
 ## Recommended Actions
-- [TC: HH:MM:SS:FF] — [specific fix for that timecode. For color issues be explicit: e.g. "Re-grade shot — footage appears ungraded/flat", "Match color temperature to adjacent shot", "Saturation drops at this cut — check grade on clip"]
+- [TC: HH:MM:SS:FF] — [specific fix for that timecode. For color: "Re-grade shot", "Match color temp". For audio quality: "Fix clipping — reduce gain", "Add noise reduction", "Fix room tone cut — smooth with crossfade". For audio editing: describe the specific edit fix.]
 (If no issues: "No actions required — file is ready for delivery.")
 
 ---
-*Analysed at 1 frame/second · Jump cuts verified by AI against 30°/30% rule · Audio via Whisper whisper-1 with segment timestamps*`,
+*Analysed at 1 frame/second · Jump cuts verified by AI against 30°/30% rule · Audio: Whisper whisper-1 (editing) + GPT-4o Audio (quality listening)*`,
         },
       ],
-      max_tokens: 1400,
+      max_tokens: 1800,
     })
 
-    return NextResponse.json({ report: report.choices[0].message.content ?? '(no report)' })
+    // Hard post-process: normalise any stray [Xs]/[Xm Ys] the model emits
+    const finalReport = normalizeTCs(report.choices[0].message.content ?? '(no report)', fps)
+    return NextResponse.json({ report: finalReport })
   } catch (err: unknown) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }

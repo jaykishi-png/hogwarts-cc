@@ -24,7 +24,7 @@ const STAGE_LABELS: Record<Stage, string> = {
   'extracting-frames':  'Extracting frames…',
   'detecting-cuts':     'Detecting jump cuts…',
   'analyzing-visuals':  'Analysing frames with GPT-4o Vision…',
-  'transcribing':       'Transcribing audio with Whisper…',
+  'transcribing':       'Transcribing & listening to audio…',
   'generating-report':  'HARRY is writing the report…',
   'done':               'Done',
 }
@@ -150,6 +150,9 @@ export default function VideoQCProcessor({ pushLog }: Props) {
           video.muted  = true
           video.preload = 'auto'
           video.crossOrigin = 'anonymous'
+          // Mount off-screen so Chrome processes blob-URL metadata reliably
+          video.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;visibility:hidden'
+          document.body.appendChild(video)
 
           video.onloadedmetadata = async () => {
             const duration  = video.duration
@@ -182,17 +185,22 @@ export default function VideoQCProcessor({ pushLog }: Props) {
               setProgress(Math.round((i / total) * 100))
               setProgressDetail(`Frame ${i} / ${total}`)
             }
+            document.body.removeChild(video)
             URL.revokeObjectURL(objUrl)
             resolve(collected)
           }
-          video.onerror = reject
+          video.onerror = (e) => {
+            document.body.removeChild(video)
+            URL.revokeObjectURL(objUrl)
+            reject(e)
+          }
           video.load()
         }
       )
 
       // ── Step 2: Detect jump cuts ──────────────────────────────────────────
       setStage('detecting-cuts'); setProgress(0)
-      const JUMP_THRESHOLD = 0.12
+      const JUMP_THRESHOLD = 0.35  // 35% luminance diff — only catches hard cuts, not gradual transitions
       const jumpCuts: number[] = []
       for (let i = 1; i < frames.length; i++) {
         const diff = pixelDiff(frames[i - 1].pixels, frames[i].pixels)
@@ -219,10 +227,11 @@ export default function VideoQCProcessor({ pushLog }: Props) {
         setProgress(Math.round(((b + 1) / totalBatches) * 100))
       }
 
-      // ── Step 4: Extract audio + Whisper ───────────────────────────────────
+      // ── Step 4: Extract audio → Whisper (transcript) + GPT-4o Audio (quality) ─
       setStage('transcribing'); setProgress(0); setProgressDetail('')
       let transcript = ''
       let allSegments: Array<{ start: number; end: number; text: string }> = []
+      const audioQualityFindings: string[] = []
       const TARGET_RATE = 16000
       const MAX_SAMPLES = Math.floor(3.8 * 1024 * 1024 / 2) // ~124s per chunk at 16kHz
       const chunkDuration = MAX_SAMPLES / TARGET_RATE // seconds per chunk
@@ -247,19 +256,38 @@ export default function VideoQCProcessor({ pushLog }: Props) {
 
         for (let c = 0; c < chunks; c++) {
           const timeOffset = c * chunkDuration
-          const slice  = mono.slice(c * MAX_SAMPLES, (c + 1) * MAX_SAMPLES)
-          const wav    = encodeWAV(slice, TARGET_RATE)
-          const blob   = new Blob([wav], { type: 'audio/wav' })
-          const fd     = new FormData()
-          fd.append('audio', blob, `chunk_${c}.wav`)
-          fd.append('chunkIdx', String(c))
-          setProgressDetail(`Chunk ${c + 1} / ${chunks}`)
-          const res  = await fetch('/api/qc/audio', { method: 'POST', body: fd })
-          const data = await res.json()
-          if (data.transcript) parts.push(data.transcript)
+          const slice      = mono.slice(c * MAX_SAMPLES, (c + 1) * MAX_SAMPLES)
+          const wav        = encodeWAV(slice, TARGET_RATE)
+          const blob       = new Blob([wav], { type: 'audio/wav' })
+
+          // FormData for Whisper
+          const whisperFd = new FormData()
+          whisperFd.append('audio', blob, `chunk_${c}.wav`)
+          whisperFd.append('chunkIdx', String(c))
+
+          // FormData for GPT-4o Audio quality (same WAV blob, no re-encoding)
+          const qualityFd = new FormData()
+          qualityFd.append('audio', blob, `chunk_${c}.wav`)
+          qualityFd.append('timeOffset', String(timeOffset))
+          qualityFd.append('fps', '24')
+
+          setProgressDetail(`Chunk ${c + 1} / ${chunks} — transcribing & listening…`)
+
+          // Run both in parallel per chunk
+          const [whisperRes, qualityRes] = await Promise.all([
+            fetch('/api/qc/audio',         { method: 'POST', body: whisperFd }),
+            fetch('/api/qc/audio-quality', { method: 'POST', body: qualityFd }),
+          ])
+
+          const [whisperData, qualityData] = await Promise.all([
+            whisperRes.json(),
+            qualityRes.json(),
+          ])
+
+          if (whisperData.transcript) parts.push(whisperData.transcript)
           // Offset segment timestamps to absolute video time
-          if (data.segments?.length) {
-            for (const seg of data.segments) {
+          if (whisperData.segments?.length) {
+            for (const seg of whisperData.segments) {
               allSegments.push({
                 start: seg.start + timeOffset,
                 end:   seg.end   + timeOffset,
@@ -267,6 +295,8 @@ export default function VideoQCProcessor({ pushLog }: Props) {
               })
             }
           }
+          if (qualityData.findings) audioQualityFindings.push(qualityData.findings)
+
           setProgress(Math.round(((c + 1) / chunks) * 100))
         }
         transcript = parts.join(' ')
@@ -290,13 +320,14 @@ export default function VideoQCProcessor({ pushLog }: Props) {
       const res  = await fetch('/api/qc/report', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          fileName:       file.name,
+          fileName:             file.name,
           duration,
           visualFindings,
           transcript,
-          segments:       allSegments,
+          segments:             allSegments,
+          audioQualityFindings,
           jumpCuts,
-          fps:            detectedFps,
+          fps:                  detectedFps,
         }),
       })
       const data = await res.json()

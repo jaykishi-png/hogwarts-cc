@@ -18,6 +18,22 @@ function secondsToTC(s: number, fps: number = 24): string {
   return [hh, mm, ss, ff].map(n => n.toString().padStart(2, '0')).join(':')
 }
 
+/** Safety-net: normalise any stray timecode formats the model emits → [TC: HH:MM:SS:FF] */
+function normalizeTCs(text: string, fps: number = 24): string {
+  return text
+    // [2m 34s] or [2m34s]
+    .replace(/\[(\d+)m\s*(\d+)s\]/g,          (_, m, s)  => `[TC: ${secondsToTC(+m * 60 + +s, fps)}]`)
+    // [2m]
+    .replace(/\[(\d+)m\]/g,                    (_, m)     => `[TC: ${secondsToTC(+m * 60, fps)}]`)
+    // [148s-158s] or [148s–158s] range — use start time
+    .replace(/\[(\d+)s[-\u2013](\d+)s\]/g,    (_, s1)    => `[TC: ${secondsToTC(+s1, fps)}]`)
+    // [94s]
+    .replace(/\[(\d+)s\]/g,                    (_, s)     => `[TC: ${secondsToTC(+s, fps)}]`)
+    // [1:34] bare MM:SS — skip if already part of [TC: HH:MM:SS:FF]
+    .replace(/(?<!\bTC: (?:\d{2}:){0,2})\[(\d{1,2}):(\d{2})\](?!:\d)/g,
+             (_, m, s) => `[TC: ${secondsToTC(+m * 60 + +s, fps)}]`)
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { frames, batchIndex, totalBatches, fps = 24 } = await req.json() as {
@@ -45,11 +61,19 @@ export async function POST(req: NextRequest) {
 
 Frames in this batch (in order): ${frameLabels}
 
-**CRITICAL TIMECODE RULE:** Every issue you report MUST start with the exact SMPTE timecode of the frame where it appears, using the timecodes listed above. Format: [TC: HH:MM:SS:FF]. Never omit the timecode.
+**CRITICAL TIMECODE RULE — READ CAREFULLY:**
+- Every issue MUST start with the SMPTE timecode of the frame, copied EXACTLY from the list above.
+- Format is ALWAYS: [TC: HH:MM:SS:FF] — two digits each, separated by colons. Example: [TC: 00:01:34:12]
+- NEVER use seconds notation like [94s] or [2m34s]. NEVER omit the TC prefix. NEVER write just a number.
+- If Frame 3 is labelled [TC: 00:00:02:00], your output must say [TC: 00:00:02:00], not [2s] or [00:02].
 
 For EACH frame, check:
 
-**1. TYPOS / TEXT ERRORS** — on-screen text, titles, lower thirds, captions, graphics. Quote the exact text visible and describe the error.
+**1. TYPOS / TEXT ERRORS** — on-screen text, titles, lower thirds, captions, graphics.
+   - CRITICAL: Only flag text that is FULLY VISIBLE and at rest (static, animation complete, not mid-build).
+   - DO NOT flag text that is still animating — e.g. letters building in, text sliding/scaling/fading into position, partial text mid-reveal. If a title or lower-third appears to be in motion or only partially on screen, SKIP IT entirely. Only check text once it has landed in its final resting position.
+   - DO NOT flag placeholder/draft labels like "GFX Pending" or "Pending approval" as typos — these are production notes, not errors.
+   - For genuine typos: quote the exact visible text and describe the error.
 
 **2. EXPOSURE ISSUES** — clipping, crush, overexposure, underexposure.
 
@@ -61,13 +85,19 @@ For EACH frame, check:
    - **COLOR CAST:** Unwanted dominant tint (e.g., heavy blue cast in shadows, green cast on skin).
 
 **4. FRAMING / COMPOSITION** — cut-off subjects, awkward headroom, horizon tilt.
+   - DO NOT flag framing as an issue if a graphic overlay, lower-third, or title card is intentionally covering part of the frame — that is by design.
 
 **5. VISUAL ARTIFACTS** — compression, flicker, noise, rendering errors.
 
-**6. JUMP CUTS** — Compare consecutive frames. A true jump cut is an abrupt edit between two shots of the SAME subject from nearly the SAME camera angle. Do NOT flag intentional transitions (scene changes, cutaways, b-roll, dissolves, wipes — any edit where the subject or location clearly changes). Only flag as a jump cut if ALL apply: (a) same subject in both frames, (b) camera angle nearly identical (<30° change — 30-degree rule), (c) framing similar (<30% change in subject size — 30% rule), (d) creates a jarring visual stutter.
+**6. JUMP CUTS** — Compare consecutive frames. A true jump cut is an abrupt edit between two shots of the SAME subject from nearly the SAME camera angle.
+   - DO NOT flag: scene changes, cutaways to b-roll, cuts to a different speaker, cuts from interview to graphics, title card sequences, transitions (dissolves, wipes, fades). ANY edit where the location, subject, or shot type clearly changes is intentional — not a jump cut.
+   - ONLY flag if ALL four conditions are true: (a) same subject in both frames, (b) camera angle nearly identical — less than 30° change, (c) subject size nearly identical — less than 30% change in framing, (d) the result is a jarring visual stutter on the same continuous shot.
 
-Issue format (one line per issue):
-[TC: HH:MM:SS:FF] TYPE: specific description
+Issue format — STRICTLY one line per issue, timecode first:
+[TC: 00:01:34:12] TYPO: "MODU LE" should be "MODULE"
+[TC: 00:02:47:00] COLOR SHIFT: shot goes noticeably warmer between Frame 4 and Frame 5
+
+Do NOT write: [94s] or [2m34s] or bare numbers. ALWAYS use [TC: HH:MM:SS:FF].
 
 If a frame is clean, skip it. If the entire batch is clean, respond exactly: BATCH_CLEAN`,
           },
@@ -80,8 +110,9 @@ If a frame is clean, skip it. If the entire batch is clean, respond exactly: BAT
       max_tokens: 900,
     })
 
-    const findings = res.choices[0].message.content ?? ''
-    return NextResponse.json({ findings: findings === 'BATCH_CLEAN' ? '' : findings })
+    const raw      = res.choices[0].message.content ?? ''
+    const findings = raw === 'BATCH_CLEAN' ? '' : normalizeTCs(raw, fps)
+    return NextResponse.json({ findings })
   } catch (err: unknown) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }

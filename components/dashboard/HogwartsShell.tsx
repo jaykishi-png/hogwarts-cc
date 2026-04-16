@@ -36,6 +36,7 @@ import { AgentStatsPanel } from './hogwarts/AgentStatsPanel'
 import { ScheduledBriefPanel } from './hogwarts/ScheduledBriefPanel'
 import { YouTubePanel } from './hogwarts/YouTubePanel'
 import { FrameioPanel } from './hogwarts/FrameioPanel'
+import { TranscriptionPanel } from './hogwarts/TranscriptionPanel'
 import { VoiceInput } from '@/lib/voice-input'
 import {
   AGENTS_DEF, COLOR_MAP, RING_MAP, TEXT_MAP, BADGE_MAP, ROOMS, GLOW,
@@ -213,6 +214,7 @@ function LeftToolbar({ active, setActive }: { active: string; setActive: (k: str
     { key: 'calendar',     icon: Calendar,     label: 'Content Calendar' },
     null,
     { key: 'qc',           icon: Clapperboard, label: 'Video QC' },
+    { key: 'transcribe',   icon: Mic,          label: 'Transcribe' },
     { key: 'frameio',      icon: Film,         label: 'Frame.io Reviews' },
     { key: 'gfx',         icon: Sparkles,     label: 'GFX Generator' },
     { key: 'product',     icon: Tag,          label: 'Product Names' },
@@ -1092,6 +1094,13 @@ export function HogwartsShell() {
               </PanelErrorBoundary>
             )}
 
+            {/* ── Transcription Panel ───────────────────────────────────────── */}
+            {activeTool === 'transcribe' && (
+              <PanelErrorBoundary panelName="Transcribe">
+                <TranscriptionPanel pushLog={pushLog} />
+              </PanelErrorBoundary>
+            )}
+
             {/* ── Frame.io Panel ────────────────────────────────────────────── */}
             {activeTool === 'frameio' && (
               <PanelErrorBoundary panelName="Frame.io Reviews">
@@ -1691,7 +1700,7 @@ export function HogwartsShell() {
                   pushLog(`${agentName} moved to ${ROOMS[newRoom].label}.`, 'move')
                 }
               }}
-              className={`flex-1 min-w-0 relative rounded-xl overflow-hidden border-2 border-[#1a0e06] ${['qc','agents','activity','env','layout','settings','chat','knowledge','gfx','product','memory','inbox','collaborate','quick','batch-hooks','calendar','stats','brief-sched','frameio'].includes(activeTool) ? 'hidden' : ''}`}
+              className={`flex-1 min-w-0 relative rounded-xl overflow-hidden border-2 border-[#1a0e06] ${['qc','transcribe','agents','activity','env','layout','settings','chat','knowledge','gfx','product','memory','inbox','collaborate','quick','batch-hooks','calendar','stats','brief-sched','frameio'].includes(activeTool) ? 'hidden' : ''}`}
               style={{
                 background: '#8b5c30',
                 backgroundImage: [
