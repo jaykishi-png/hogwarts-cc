@@ -148,47 +148,69 @@ export async function createTranscriptDoc(
   const footerMap = docSnap.data.footers as any
 
   if (defaultFooterId && footerMap?.[defaultFooterId]) {
-    // ── Footer exists: clear it and write fresh metadata ─────────────────
-    const content = footerMap[defaultFooterId].content ?? []
+    // ── Footer exists — replace text while preserving per-line formatting ─
+    //
+    // Strategy: for each footer paragraph, INSERT new text first (inheriting
+    // the original run styling — bold/red on line 1, normal on lines 2-3),
+    // then DELETE the old text (now shifted right by the new text's length).
+    // Process paragraphs in REVERSE index order so earlier paragraphs' indices
+    // remain stable when we apply each operation in a single batchUpdate.
+    //
+    // This avoids:
+    //  • cross-paragraph deletes (which can mis-handle structural elements)
+    //  • inserting into an empty paragraph (which loses run-level formatting)
+    //  • off-by-one from sectionBreak elements at the footer segment start
 
-    // Filter to only paragraph elements — the content array may start with a
-    // sectionBreak structural element at index 1 which must not be deleted.
-    // Using hardcoded index 1 for both delete-start and insert avoids the
-    // off-by-one that leaves the first character of the original footer text.
+    const content    = footerMap[defaultFooterId].content ?? []
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const paragraphs = (content as any[]).filter((c) => c.paragraph)
-    const lastPara   = paragraphs[paragraphs.length - 1]
-    // endIndex is exclusive; -1 preserves the mandatory trailing newline
-    const deleteEnd  = lastPara ? ((lastPara.endIndex as number) - 1) : 1
+
+    const footerLines = [
+      `${opts.footer.courseTitle} \u2022 ${opts.footer.courseLevel}`,
+      `Module ${opts.footer.moduleNum} | Lesson ${opts.footer.lessonNum}`,
+      opts.footer.lessonTitle,
+    ]
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const footerReqs: any[] = []
 
-    // Delete all existing paragraph text, starting at 1 (footer segment start)
-    if (deleteEnd > 1) {
+    const limit = Math.min(paragraphs.length, footerLines.length)
+    for (let i = limit - 1; i >= 0; i--) {
+      const para       = paragraphs[i]
+      const paraStart  = para.startIndex  as number
+      const paraEnd    = (para.endIndex   as number) - 1  // exclude trailing \n
+      const oldLen     = paraEnd - paraStart
+      const newText    = footerLines[i]
+
+      // Insert new text at paragraph start — new text inherits the run style
+      // (bold, red, size) of the original first character at paraStart
       footerReqs.push({
-        deleteContentRange: {
-          range: {
-            segmentId:  defaultFooterId,
-            startIndex: 1,
-            endIndex:   deleteEnd,
-          },
+        insertText: {
+          location: { segmentId: defaultFooterId, index: paraStart },
+          text:     newText,
         },
       })
+
+      // Delete old text — now shifted right by newText.length
+      if (oldLen > 0) {
+        footerReqs.push({
+          deleteContentRange: {
+            range: {
+              segmentId:  defaultFooterId,
+              startIndex: paraStart + newText.length,
+              endIndex:   paraStart + newText.length + oldLen,
+            },
+          },
+        })
+      }
     }
 
-    // Insert fresh metadata at the start of the (now-empty) footer
-    footerReqs.push({
-      insertText: {
-        location: { segmentId: defaultFooterId, index: 1 },
-        text:     metaText,
-      },
-    })
-
-    await docs.documents.batchUpdate({
-      documentId:  docId,
-      requestBody: { requests: footerReqs },
-    })
+    if (footerReqs.length > 0) {
+      await docs.documents.batchUpdate({
+        documentId:  docId,
+        requestBody: { requests: footerReqs },
+      })
+    }
   } else {
     // ── No footer in template: append metadata to the body ───────────────
     const bodyContent = docSnap.data.body?.content ?? []
