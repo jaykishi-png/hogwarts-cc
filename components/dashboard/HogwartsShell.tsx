@@ -231,14 +231,18 @@ function LeftToolbar({ active, setActive }: { active: string; setActive: (k: str
     { key: 'settings',    icon: Settings2,    label: 'Settings' },
   ]
   return (
-    <aside className="w-11 flex-shrink-0 flex flex-col items-center py-2 gap-0 bg-[#0a0c14] border-r border-[#1e2030] overflow-y-auto overflow-x-hidden">
+    <aside className="
+      flex-shrink-0 bg-[#0a0c14]
+      flex flex-row items-center px-2 py-1 gap-0 overflow-x-auto overflow-y-hidden border-t border-[#1e2030]
+      md:flex-col md:items-center md:px-0 md:py-2 md:overflow-x-hidden md:overflow-y-auto md:w-11 md:border-t-0 md:border-r md:border-[#1e2030]
+    ">
       {/* logo */}
-      <div className="w-7 h-7 rounded-md bg-purple-900/60 border border-purple-800/50 flex items-center justify-center mb-2">
+      <div className="w-7 h-7 rounded-md bg-purple-900/60 border border-purple-800/50 flex items-center justify-center mr-1 flex-shrink-0 md:mr-0 md:mb-2">
         <span className="text-[11px]">⚡</span>
       </div>
       {tools.map((t, i) =>
         t === null
-          ? <div key={i} className="w-6 h-px bg-[#1e2030] my-0.5 flex-shrink-0" />
+          ? <div key={i} className="h-6 w-px bg-[#1e2030] mx-0.5 flex-shrink-0 md:h-px md:w-6 md:my-0.5 md:mx-0" />
           : (
             <button
               key={t.key}
@@ -953,37 +957,37 @@ export function HogwartsShell() {
     <div className="h-screen flex flex-col bg-[#0a0c14] overflow-hidden">
 
       {/* ── Title bar ──────────────────────────────────────────────────────── */}
-      <header className="flex-shrink-0 bg-[#0d0f1a] border-b border-[#1e2030] px-4 py-2 z-10">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
+      <header className="flex-shrink-0 bg-[#0d0f1a] border-b border-[#1e2030] px-3 sm:px-4 py-2 z-10">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="flex items-center gap-2 flex-shrink-0">
               <span className="text-[11px] font-bold text-gray-400 tracking-widest uppercase">Hogwarts AI</span>
-              <span className="text-[10px] text-gray-700 font-mono">v1.0</span>
+              <span className="text-[10px] text-gray-700 font-mono hidden sm:inline">v1.0</span>
             </div>
-            <span className="text-gray-700 text-sm">·</span>
-            <span className="text-[11px] text-gray-600 hidden sm:block font-mono">
+            <span className="text-gray-700 text-sm hidden sm:inline">·</span>
+            <span className="text-[11px] text-gray-600 hidden md:block font-mono">
               {format(new Date(), 'EEE MMM d')}
             </span>
             <NavTabs active="hogwarts" />
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 text-[10px] text-green-400 bg-green-900/15 border border-green-800/30 rounded px-2 py-0.5">
+          <div className="flex items-center gap-1 sm:gap-2 flex-wrap">
+            <div className="flex items-center gap-1 text-[10px] text-green-400 bg-green-900/15 border border-green-800/30 rounded px-2 py-0.5">
               <Wifi size={9} /> {onlineCount}/7
             </div>
             {inMeetingCount > 0 && (
-              <div className="flex items-center gap-1 text-[10px] text-blue-400 bg-blue-900/15 border border-blue-800/30 rounded px-2 py-0.5">
+              <div className="hidden sm:flex items-center gap-1 text-[10px] text-blue-400 bg-blue-900/15 border border-blue-800/30 rounded px-2 py-0.5">
                 <span className="w-1 h-1 bg-blue-400 rounded-full animate-pulse" /> {inMeetingCount} meeting
               </div>
             )}
-            <button onClick={simulateWork}    className="flex items-center gap-1 text-[10px] text-amber-400 hover:text-amber-300 border border-amber-800/40 bg-amber-900/15 rounded px-2 py-0.5 transition-colors"><Zap size={9} /> Work</button>
-            <button onClick={assembleMeeting} className="flex items-center gap-1 text-[10px] text-blue-400  hover:text-blue-300  border border-blue-800/40  bg-blue-900/15  rounded px-2 py-0.5 transition-colors"><Users size={9} /> Meet</button>
-            <button onClick={dismissMeeting}  className="flex items-center gap-1 text-[10px] text-gray-400  hover:text-gray-300  border border-[#2a2d3a]    bg-[#161928]    rounded px-2 py-0.5 transition-colors"><RotateCcw size={9} /> Dismiss</button>
+            <button onClick={simulateWork}    className="flex items-center gap-1 text-[10px] text-amber-400 hover:text-amber-300 border border-amber-800/40 bg-amber-900/15 rounded px-2 py-0.5 transition-colors"><Zap size={9} /><span className="hidden sm:inline"> Work</span></button>
+            <button onClick={assembleMeeting} className="flex items-center gap-1 text-[10px] text-blue-400  hover:text-blue-300  border border-blue-800/40  bg-blue-900/15  rounded px-2 py-0.5 transition-colors"><Users size={9} /><span className="hidden sm:inline"> Meet</span></button>
+            <button onClick={dismissMeeting}  className="flex items-center gap-1 text-[10px] text-gray-400  hover:text-gray-300  border border-[#2a2d3a]    bg-[#161928]    rounded px-2 py-0.5 transition-colors"><RotateCcw size={9} /><span className="hidden sm:inline"> Dismiss</span></button>
           </div>
         </div>
       </header>
 
       {/* ── Body: toolbar + content ─────────────────────────────────────────── */}
-      <div className="flex-1 flex min-h-0">
+      <div className="flex-1 flex flex-col-reverse min-h-0 md:flex-row">
 
         {/* ── Left toolbar ──────────────────────────────────────────────────── */}
         <LeftToolbar active={activeTool} setActive={setActiveTool} />
@@ -2238,18 +2242,20 @@ export function HogwartsShell() {
             </div>
           </main>
 
-          {/* ── Bottom bar ──────────────────────────────────────────────────── */}
-          <BottomBar
-            onlineCount={onlineCount}
-            inMeetingCount={inMeetingCount}
-            activeBotTab={activeBotTab}
-            setActiveBotTab={(t) => {
-              setActiveBotTab(t)
-              // Map bottom bar tabs to sidebar panels
-              const map: Record<string, string> = { environment: 'env', layout: 'layout', settings: 'settings' }
-              if (map[t]) setActiveTool(map[t])
-            }}
-          />
+          {/* ── Bottom bar (hidden on mobile to avoid conflict with bottom toolbar) ── */}
+          <div className="hidden md:block">
+            <BottomBar
+              onlineCount={onlineCount}
+              inMeetingCount={inMeetingCount}
+              activeBotTab={activeBotTab}
+              setActiveBotTab={(t) => {
+                setActiveBotTab(t)
+                // Map bottom bar tabs to sidebar panels
+                const map: Record<string, string> = { environment: 'env', layout: 'layout', settings: 'settings' }
+                if (map[t]) setActiveTool(map[t])
+              }}
+            />
+          </div>
 
         </div>
       </div>

@@ -31,21 +31,23 @@ const TABS: { key: TabKey; label: string; href: string; icon: React.ReactNode }[
 
 export function NavTabs({ active }: { active: TabKey }) {
   return (
-    <nav className="flex items-center gap-1 bg-[#0f1117] rounded-lg p-1 border border-[#2a2d3a]">
-      {TABS.map(tab => (
-        <Link
-          key={tab.key}
-          href={tab.href}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-            active === tab.key
-              ? 'bg-[#1a1d27] text-gray-100 border border-[#3a3d4a]'
-              : 'text-gray-500 hover:text-gray-300'
-          }`}
-        >
-          {tab.icon}
-          {tab.label}
-        </Link>
-      ))}
+    <nav className="overflow-x-auto">
+      <div className="flex items-center gap-1 bg-[#0f1117] rounded-lg p-1 border border-[#2a2d3a] min-w-max">
+        {TABS.map(tab => (
+          <Link
+            key={tab.key}
+            href={tab.href}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+              active === tab.key
+                ? 'bg-[#1a1d27] text-gray-100 border border-[#3a3d4a]'
+                : 'text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            {tab.icon}
+            {tab.label}
+          </Link>
+        ))}
+      </div>
     </nav>
   )
 }

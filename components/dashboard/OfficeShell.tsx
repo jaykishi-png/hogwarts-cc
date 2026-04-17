@@ -383,31 +383,31 @@ export function OfficeShell() {
             </div>
             <NavTabs active="office" />
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 text-xs text-green-400 bg-green-900/20 border border-green-800/40 rounded-lg px-2.5 py-1.5">
-              <Wifi size={11} /> {onlineCount}/7 Online
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 text-xs text-green-400 bg-green-900/20 border border-green-800/40 rounded-lg px-2 sm:px-2.5 py-1.5">
+              <Wifi size={11} /> <span>{onlineCount}/7</span><span className="hidden sm:inline"> Online</span>
             </div>
             {inMeetingCount > 0 && (
-              <div className="flex items-center gap-1.5 text-xs text-blue-400 bg-blue-900/20 border border-blue-800/40 rounded-lg px-2.5 py-1.5">
+              <div className="flex items-center gap-1.5 text-xs text-blue-400 bg-blue-900/20 border border-blue-800/40 rounded-lg px-2 sm:px-2.5 py-1.5">
                 <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
-                {inMeetingCount} in meeting
+                <span className="hidden sm:inline">{inMeetingCount} in meeting</span>
               </div>
             )}
-            <button onClick={simulateWork} className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 border border-amber-800/50 bg-amber-900/20 rounded-lg px-2.5 py-1.5 transition-colors">
-              <Zap size={11} /> Simulate Work
+            <button onClick={simulateWork} className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 border border-amber-800/50 bg-amber-900/20 rounded-lg px-2 sm:px-2.5 py-1.5 transition-colors">
+              <Zap size={11} /> <span className="hidden sm:inline">Simulate Work</span>
             </button>
-            <button onClick={assembleMeeting} className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 border border-blue-800/50 bg-blue-900/20 rounded-lg px-2.5 py-1.5 transition-colors">
-              <Users size={11} /> Full Meeting
+            <button onClick={assembleMeeting} className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 border border-blue-800/50 bg-blue-900/20 rounded-lg px-2 sm:px-2.5 py-1.5 transition-colors">
+              <Users size={11} /> <span className="hidden sm:inline">Full Meeting</span>
             </button>
-            <button onClick={dismissMeeting} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-300 border border-[#2a2d3a] bg-[#1a1d27] rounded-lg px-2.5 py-1.5 transition-colors">
-              <RotateCcw size={11} /> Dismiss
+            <button onClick={dismissMeeting} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-300 border border-[#2a2d3a] bg-[#1a1d27] rounded-lg px-2 sm:px-2.5 py-1.5 transition-colors">
+              <RotateCcw size={11} /> <span className="hidden sm:inline">Dismiss</span>
             </button>
           </div>
         </div>
       </header>
 
       {/* Canvas */}
-      <main className="flex-1 min-h-0 flex gap-3 p-4">
+      <main className="flex-1 min-h-0 flex flex-col gap-3 p-3 md:flex-row md:p-4 overflow-y-auto md:overflow-hidden">
 
         {/* ── Floor plan ─────────────────────────────────────── */}
         <div
@@ -480,7 +480,7 @@ export function OfficeShell() {
         </div>
 
         {/* ── Sidebar ──────────────────────────────────────────── */}
-        <div className="w-[196px] flex-shrink-0 flex flex-col gap-3">
+        <div className="w-full md:w-[196px] flex-shrink-0 flex flex-col gap-3">
 
           <div className="bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-3 flex flex-col gap-2">
             <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Team</p>

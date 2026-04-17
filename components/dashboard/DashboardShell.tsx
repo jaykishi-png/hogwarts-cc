@@ -34,6 +34,15 @@ const scrollCls = [
   '[&::-webkit-scrollbar-thumb]:rounded-full',
 ].join(' ')
 
+// Same scrollbar styles but only active at md+ (columns scroll on desktop, flow naturally on mobile)
+const colCls = [
+  'md:overflow-y-auto',
+  '[&::-webkit-scrollbar]:w-[3px]',
+  '[&::-webkit-scrollbar-track]:bg-transparent',
+  '[&::-webkit-scrollbar-thumb]:bg-[#2a2d3a]',
+  '[&::-webkit-scrollbar-thumb]:rounded-full',
+].join(' ')
+
 const card = 'bg-[#1a1d27] rounded-xl border border-[#2a2d3a] p-4'
 
 export function DashboardShell() {
@@ -128,14 +137,14 @@ export function DashboardShell() {
     <div className="h-screen flex flex-col bg-[#0f1117] overflow-hidden">
 
       {/* ── Header ─────────────────────────────────────────────── */}
-      <header className="flex-shrink-0 bg-[#13151e] border-b border-[#2a2d3a] px-6 py-3 z-10">
-        <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-4">
+      <header className="flex-shrink-0 bg-[#13151e] border-b border-[#2a2d3a] px-4 sm:px-6 py-3 z-10">
+        <div className="max-w-[1600px] mx-auto flex flex-wrap items-center justify-between gap-2">
 
           {/* Left: title + date + tabs */}
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex items-center gap-2 flex-shrink-0">
               <h1 className="text-base font-semibold text-gray-100">Dashboard</h1>
-              <span className="text-sm text-gray-500 hidden sm:block">
+              <span className="text-sm text-gray-500 hidden md:block">
                 {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
               </span>
             </div>
@@ -143,17 +152,17 @@ export function DashboardShell() {
           </div>
 
           {/* Right: actions */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
             <Link
               href="/calendar"
-              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors border border-[#2a2d3a] rounded-lg px-2.5 py-1 hover:border-gray-600"
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors border border-[#2a2d3a] rounded-lg px-2 sm:px-2.5 py-1 hover:border-gray-600"
             >
               <CalendarDays size={12} />
-              Calendar
+              <span className="hidden sm:inline">Calendar</span>
             </Link>
 
             {selectedIds.size > 0 && (
-              <div className="flex items-center gap-2 bg-blue-900/30 border border-blue-800/50 rounded-lg px-3 py-1.5">
+              <div className="flex items-center gap-2 bg-blue-900/30 border border-blue-800/50 rounded-lg px-2.5 py-1.5">
                 <span className="text-xs text-blue-400">{selectedIds.size} selected</span>
                 <button
                   onClick={bulkComplete}
@@ -181,10 +190,10 @@ export function DashboardShell() {
               onClick={runAiTriage}
               disabled={triaging}
               title="AI triage (T)"
-              className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 border border-amber-800/50 hover:border-amber-700/60 bg-amber-900/20 rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 border border-amber-800/50 hover:border-amber-700/60 bg-amber-900/20 rounded-lg px-2 sm:px-2.5 py-1.5 transition-colors disabled:opacity-50"
             >
               {triaging ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-              {triaging ? 'Triaging...' : 'AI Triage'}
+              <span className="hidden sm:inline">{triaging ? 'Triaging...' : 'AI Triage'}</span>
             </button>
 
             <KeyboardShortcutsHelp />
@@ -194,7 +203,7 @@ export function DashboardShell() {
       </header>
 
       {/* ── Main canvas ────────────────────────────────────────── */}
-      <main className="flex-1 min-h-0 max-w-[1600px] w-full mx-auto px-4 sm:px-6 py-4 flex gap-4">
+      <main className="flex-1 min-h-0 max-w-[1600px] w-full mx-auto px-4 sm:px-6 py-4 flex flex-col gap-4 md:flex-row md:overflow-hidden">
         {isLoading ? (
           <div className="flex items-center justify-center w-full text-gray-400 text-sm">
             Loading your dashboard...
@@ -202,7 +211,7 @@ export function DashboardShell() {
         ) : (
           <>
             {/* Column 1 · Priorities */}
-            <div className={`${scrollCls} flex-1 min-w-0 flex flex-col gap-4`}>
+            <div className={`${colCls} flex-1 min-w-0 flex flex-col gap-4`}>
               <div className={card}>
                 <TopPriorities
                   tasks={activeTasks}
@@ -222,7 +231,7 @@ export function DashboardShell() {
             </div>
 
             {/* Column 2 · Schedule + Comms */}
-            <div className={`${scrollCls} flex-1 min-w-0 flex flex-col gap-4`}>
+            <div className={`${colCls} flex-1 min-w-0 flex flex-col gap-4`}>
               <div className={card}>
                 <TodaySchedule events={events} />
               </div>
@@ -249,7 +258,7 @@ export function DashboardShell() {
             </div>
 
             {/* Column 3 · Work tracking */}
-            <div className={`${scrollCls} flex-1 min-w-0 flex flex-col gap-4`}>
+            <div className={`${colCls} flex-1 min-w-0 flex flex-col gap-4`}>
               <div className={card}>
                 <EodTasksPanel />
               </div>
