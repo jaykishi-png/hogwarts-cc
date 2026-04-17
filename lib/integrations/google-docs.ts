@@ -139,8 +139,8 @@ export async function createTranscriptDoc(
   const docSnap = await docs.documents.get({ documentId: docId })
 
   const metaText =
-    `${opts.footer.courseTitle}  |  ${opts.footer.courseLevel}\n` +
-    `Module ${opts.footer.moduleNum}  |  Lesson ${opts.footer.lessonNum}\n` +
+    `${opts.footer.courseTitle} \u2022 ${opts.footer.courseLevel}\n` +
+    `Module ${opts.footer.moduleNum} | Lesson ${opts.footer.lessonNum}\n` +
     opts.footer.lessonTitle
 
   const defaultFooterId = docSnap.data.documentStyle?.defaultFooterId
@@ -149,30 +149,38 @@ export async function createTranscriptDoc(
 
   if (defaultFooterId && footerMap?.[defaultFooterId]) {
     // ── Footer exists: clear it and write fresh metadata ─────────────────
-    const content   = footerMap[defaultFooterId].content ?? []
-    const firstIdx  = (content[0]?.startIndex ?? 1) as number
-    const deleteEnd = ((content[content.length - 1]?.endIndex ?? 2) - 1) as number
+    const content = footerMap[defaultFooterId].content ?? []
+
+    // Filter to only paragraph elements — the content array may start with a
+    // sectionBreak structural element at index 1 which must not be deleted.
+    // Using hardcoded index 1 for both delete-start and insert avoids the
+    // off-by-one that leaves the first character of the original footer text.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const paragraphs = (content as any[]).filter((c) => c.paragraph)
+    const lastPara   = paragraphs[paragraphs.length - 1]
+    // endIndex is exclusive; -1 preserves the mandatory trailing newline
+    const deleteEnd  = lastPara ? ((lastPara.endIndex as number) - 1) : 1
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const footerReqs: any[] = []
 
-    // Delete everything except the mandatory trailing newline
-    if (deleteEnd > firstIdx) {
+    // Delete all existing paragraph text, starting at 1 (footer segment start)
+    if (deleteEnd > 1) {
       footerReqs.push({
         deleteContentRange: {
           range: {
             segmentId:  defaultFooterId,
-            startIndex: firstIdx,
+            startIndex: 1,
             endIndex:   deleteEnd,
           },
         },
       })
     }
 
-    // Insert metadata at the (now-empty) start of the footer
+    // Insert fresh metadata at the start of the (now-empty) footer
     footerReqs.push({
       insertText: {
-        location: { segmentId: defaultFooterId, index: firstIdx },
+        location: { segmentId: defaultFooterId, index: 1 },
         text:     metaText,
       },
     })
