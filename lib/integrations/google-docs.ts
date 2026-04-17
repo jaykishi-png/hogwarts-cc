@@ -125,33 +125,80 @@ export async function createTranscriptDoc(
     requestBody: { requests },
   })
 
-  // 3. Append course metadata at the end of the document body.
-  // We read the doc to find the current body end index, then insert
-  // before the final newline. This is more reliable than page footers
-  // because it doesn't depend on the template's footer structure.
-  const docSnap  = await docs.documents.get({ documentId: docId })
-  const bodyContent = docSnap.data.body?.content ?? []
-  // The last structural element is always an implicit paragraph; inserting
-  // at endIndex−1 places text before that final newline.
-  const lastElem = bodyContent[bodyContent.length - 1]
-  const insertAt = (lastElem?.endIndex ?? 2) - 1
+  // 3. Write course metadata into the document footer.
+  //
+  // We read the document AFTER the replaceAllText step to get the real
+  // footer ID from documentStyle.defaultFooterId.  Then we DELETE the
+  // entire existing footer content (which may contain un-replaceable
+  // placeholder text due to Google Docs internal text-run splitting) and
+  // INSERT fresh metadata so it always shows the correct values regardless
+  // of what format the template's footer uses.
+  //
+  // If the template has no footer at all we fall back to appending the
+  // metadata as a block at the end of the body.
+  const docSnap = await docs.documents.get({ documentId: docId })
 
-  const meta =
-    `\n\n${opts.footer.courseTitle}  |  ${opts.footer.courseLevel}\n` +
+  const metaText =
+    `${opts.footer.courseTitle}  |  ${opts.footer.courseLevel}\n` +
     `Module ${opts.footer.moduleNum}  |  Lesson ${opts.footer.lessonNum}\n` +
     opts.footer.lessonTitle
 
-  await docs.documents.batchUpdate({
-    documentId:  docId,
-    requestBody: {
-      requests: [{
-        insertText: {
-          location: { index: insertAt },
-          text:      meta,
+  const defaultFooterId = docSnap.data.documentStyle?.defaultFooterId
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const footerMap = docSnap.data.footers as any
+
+  if (defaultFooterId && footerMap?.[defaultFooterId]) {
+    // ── Footer exists: clear it and write fresh metadata ─────────────────
+    const content   = footerMap[defaultFooterId].content ?? []
+    const firstIdx  = (content[0]?.startIndex ?? 1) as number
+    const deleteEnd = ((content[content.length - 1]?.endIndex ?? 2) - 1) as number
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const footerReqs: any[] = []
+
+    // Delete everything except the mandatory trailing newline
+    if (deleteEnd > firstIdx) {
+      footerReqs.push({
+        deleteContentRange: {
+          range: {
+            segmentId:  defaultFooterId,
+            startIndex: firstIdx,
+            endIndex:   deleteEnd,
+          },
         },
-      }],
-    },
-  })
+      })
+    }
+
+    // Insert metadata at the (now-empty) start of the footer
+    footerReqs.push({
+      insertText: {
+        location: { segmentId: defaultFooterId, index: firstIdx },
+        text:     metaText,
+      },
+    })
+
+    await docs.documents.batchUpdate({
+      documentId:  docId,
+      requestBody: { requests: footerReqs },
+    })
+  } else {
+    // ── No footer in template: append metadata to the body ───────────────
+    const bodyContent = docSnap.data.body?.content ?? []
+    const lastElem    = bodyContent[bodyContent.length - 1]
+    const insertAt    = ((lastElem?.endIndex ?? 2) - 1) as number
+
+    await docs.documents.batchUpdate({
+      documentId:  docId,
+      requestBody: {
+        requests: [{
+          insertText: {
+            location: { index: insertAt },
+            text:     `\n\n${metaText}`,
+          },
+        }],
+      },
+    })
+  }
 
   return {
     docId,
