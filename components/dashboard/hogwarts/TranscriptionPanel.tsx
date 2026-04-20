@@ -15,21 +15,22 @@ type TxStatus  = 'pending' | 'transcribing' | 'done' | 'error'
 type DocStatus = 'pending' | 'creating'     | 'done' | 'error'
 
 interface BatchItem {
-  id:          string
-  file:        File
-  txStatus:    TxStatus
-  txProgress:  number
-  txChunk:     string
-  transcript:  string
-  segments:    Segment[]
-  txError:     string
-  moduleNum:   string
-  lessonNum:   string
-  lessonTitle: string
-  docStatus:   DocStatus
-  docUrl:      string
-  docTitle:    string
-  docError:    string
+  id:                  string
+  file:                File
+  txStatus:            TxStatus
+  txProgress:          number
+  txChunk:             string
+  transcript:          string
+  segments:            Segment[]
+  txError:             string
+  moduleNum:           string
+  lessonNum:           string
+  lessonTitle:         string
+  footerLine2Override?: string
+  docStatus:           DocStatus
+  docUrl:              string
+  docTitle:            string
+  docError:            string
 }
 
 type PanelStage = 'idle' | 'queued' | 'transcribing' | 'metadata' | 'creating' | 'done'
@@ -62,9 +63,10 @@ interface BatchHistoryEntry {
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 
-const HISTORY_KEY   = 'transcription_history'
-const TEMPLATES_KEY = 'transcription_custom_templates'
-const MAX_HISTORY   = 50
+const HISTORY_KEY          = 'transcription_history'
+const TEMPLATES_KEY        = 'transcription_custom_templates'
+const BUILTIN_OVERRIDES_KEY = 'transcription_builtin_overrides'
+const MAX_HISTORY          = 50
 
 function readLS<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback
@@ -171,12 +173,38 @@ const wordCount = (t: string) => t.trim() ? t.trim().split(/\s+/).length : 0
 const baseName  = (f: File)   => f.name.replace(/\.[^/.]+$/, '')
 const truncate  = (s: string, n = 30) => s.length > n ? s.slice(0, n - 1) + '…' : s
 
+interface FileMetadata {
+  moduleNum: string
+  lessonNum: string
+  footerLine2Override?: string  // replaces "Module X | Lesson Y" in the footer
+}
+
+function parseFileMetadata(filename: string, lessonIdx: number): FileMetadata {
+  // Try M<digits>L<digits> first (e.g. M4L1). Negative lookbehind avoids matching
+  // course keys like "MH1" where M is followed by a letter.
+  const mlMatch = filename.match(/(?<![A-Za-z])M(\d+)L(\d+)/i)
+  if (mlMatch) return { moduleNum: mlMatch[1], lessonNum: mlMatch[2] }
+
+  // No M#L# → check for intro / outro
+  const lower = filename.toLowerCase()
+  if (/life.?intro/i.test(filename)) return { moduleNum: '1', lessonNum: '1', footerLine2Override: 'Life Introduction' }
+  if (lower.includes('intro'))       return { moduleNum: '1', lessonNum: '1', footerLine2Override: 'Course Introduction' }
+  if (lower.includes('outro'))       return { moduleNum: '1', lessonNum: '1', footerLine2Override: 'Conclusion' }
+
+  // Fallback
+  return { moduleNum: '1', lessonNum: String(lessonIdx + 1) }
+}
+
 function makeItem(file: File, lessonIdx: number): BatchItem {
+  const meta = parseFileMetadata(file.name, lessonIdx)
   return {
     id: `${file.name}-${Date.now()}-${Math.random()}`,
     file,
     txStatus: 'pending', txProgress: 0, txChunk: '', transcript: '', segments: [], txError: '',
-    moduleNum: '1', lessonNum: String(lessonIdx + 1), lessonTitle: '',
+    moduleNum: meta.moduleNum,
+    lessonNum: meta.lessonNum,
+    footerLine2Override: meta.footerLine2Override,
+    lessonTitle: '',
     docStatus: 'pending', docUrl: '', docTitle: '', docError: '',
   }
 }
@@ -215,21 +243,30 @@ export function TranscriptionPanel({ pushLog }: Props) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
 
   // ── Custom templates ───────────────────────────────────────────────────────
-  const [customTemplates, setCustomTemplates] = useState<TranscriptTemplate[]>([])
-  const [newTpl, setNewTpl] = useState({ key: '', label: '', courseTitle: '', templateId: '' })
-  const [tplError, setTplError] = useState('')
+  const [customTemplates,   setCustomTemplates]   = useState<TranscriptTemplate[]>([])
+  const [newTpl,            setNewTpl]            = useState({ key: '', label: '', courseTitle: '', templateId: '' })
+  const [tplError,          setTplError]          = useState('')
+
+  // ── Built-in template overrides ────────────────────────────────────────────
+  const [builtInOverrides,  setBuiltInOverrides]  = useState<Record<string, Partial<TranscriptTemplate>>>({})
+  const [editingBuiltin,    setEditingBuiltin]    = useState<string | null>(null)
+  const [builtinDraft,      setBuiltinDraft]      = useState<Partial<TranscriptTemplate>>({})
 
   // Load from localStorage on mount
   useEffect(() => {
     setHistory(readLS<BatchHistoryEntry[]>(HISTORY_KEY, []))
     setCustomTemplates(readLS<TranscriptTemplate[]>(TEMPLATES_KEY, []))
+    setBuiltInOverrides(readLS<Record<string, Partial<TranscriptTemplate>>>(BUILTIN_OVERRIDES_KEY, {}))
   }, [])
 
   // Keep itemsRef in sync so createAllDocs can read current items reliably
   useEffect(() => { itemsRef.current = items }, [items])
 
-  // All available templates = static + custom
-  const allTemplates: TranscriptTemplate[] = [...TRANSCRIPT_TEMPLATES, ...customTemplates]
+  // All available templates = static (with any overrides applied) + custom
+  const allTemplates: TranscriptTemplate[] = [
+    ...TRANSCRIPT_TEMPLATES.map(t => ({ ...t, ...builtInOverrides[t.key] })),
+    ...customTemplates,
+  ]
   const selectedTemplate = allTemplates.find(t => t.key === templateKey)
   const isLocked = panelStage === 'creating' || panelStage === 'done'
 
@@ -358,13 +395,14 @@ export function TranscriptionPanel({ pushLog }: Props) {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             templateKey,
-            courseTitle: courseTitle.trim() || undefined,
-            courseLevel: courseLevel.trim() || 'Beginner',
-            lessonTitle: item.lessonTitle,
-            moduleNum:   item.moduleNum,
-            lessonNum:   item.lessonNum,
-            transcript:  item.transcript,
-            folderId:    fId,
+            courseTitle:         courseTitle.trim() || undefined,
+            courseLevel:         courseLevel.trim() || 'Beginner',
+            lessonTitle:         item.lessonTitle,
+            moduleNum:           item.moduleNum,
+            lessonNum:           item.lessonNum,
+            footerLine2Override: item.footerLine2Override,
+            transcript:          item.transcript,
+            folderId:            fId,
           }),
         })
         const data = await res.json()
@@ -567,12 +605,17 @@ export function TranscriptionPanel({ pushLog }: Props) {
                 {/* Course Level */}
                 <div>
                   <label className="block text-[10px] text-gray-500 mb-1">Course Level</label>
-                  <input type="text" value={courseLevel}
-                    onChange={e => setCourseLevel(e.target.value)}
-                    placeholder="Beginner"
-                    disabled={isLocked}
-                    className="w-full bg-[#07080e] border border-[#1e2030] rounded-lg px-3 py-2 text-xs text-gray-300 focus:outline-none focus:border-violet-800/60 placeholder:text-gray-700 disabled:opacity-50"
-                  />
+                  <div className="relative">
+                    <select value={courseLevel} onChange={e => setCourseLevel(e.target.value)}
+                      disabled={isLocked}
+                      className="w-full bg-[#07080e] border border-[#1e2030] rounded-lg px-3 py-2 text-xs text-gray-300 appearance-none cursor-pointer focus:outline-none focus:border-violet-800/60 disabled:opacity-50">
+                      <option value="">Select level…</option>
+                      {['Beginner','Intermediate','Advanced','Expert'].map(l => (
+                        <option key={l} value={l}>{l}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={11} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" />
+                  </div>
                 </div>
 
                 {/* Course Title — full width */}
@@ -797,14 +840,75 @@ export function TranscriptionPanel({ pushLog }: Props) {
             {/* Built-in templates list */}
             <div>
               <p className="text-[10px] font-semibold text-gray-500 mb-2 uppercase tracking-wider">Built-in ({TRANSCRIPT_TEMPLATES.length})</p>
-              <div className="space-y-1 max-h-[200px] overflow-y-auto pr-0.5">
-                {TRANSCRIPT_TEMPLATES.map(t => (
-                  <div key={t.key} className="flex items-center gap-2 px-3 py-2 bg-[#07080e] border border-[#1e2030] rounded-lg">
-                    <span className="text-[10px] font-bold text-violet-400 w-10 flex-shrink-0">{t.key}</span>
-                    <span className="text-[10px] text-gray-400 flex-1 truncate">{t.courseTitle}</span>
-                    <span className="text-[9px] text-gray-700 font-mono truncate max-w-[100px]">{t.templateId.slice(0, 12)}…</span>
-                  </div>
-                ))}
+              <div className="space-y-1 max-h-[380px] overflow-y-auto pr-0.5">
+                {TRANSCRIPT_TEMPLATES.map(t => {
+                  const override = builtInOverrides[t.key]
+                  const effective = { ...t, ...override }
+                  const isEditing = editingBuiltin === t.key
+                  const isModified = !!override && Object.keys(override).length > 0
+                  return (
+                    <div key={t.key} className={`bg-[#07080e] border rounded-lg overflow-hidden transition-colors ${isEditing ? 'border-violet-800/60' : isModified ? 'border-amber-800/40' : 'border-[#1e2030]'}`}>
+                      {/* Row */}
+                      <div className="flex items-center gap-2 px-3 py-2">
+                        <span className="text-[10px] font-bold text-violet-400 w-10 flex-shrink-0">{t.key}</span>
+                        <span className="text-[10px] text-gray-400 flex-1 truncate">{effective.courseTitle}</span>
+                        {isModified && <span className="text-[8px] text-amber-500 flex-shrink-0">edited</span>}
+                        <span className="text-[9px] text-gray-700 font-mono truncate max-w-[80px]">{effective.templateId.slice(0, 10)}…</span>
+                        <button
+                          onClick={() => {
+                            if (isEditing) { setEditingBuiltin(null) }
+                            else { setEditingBuiltin(t.key); setBuiltinDraft({ label: effective.label, courseTitle: effective.courseTitle, templateId: effective.templateId }) }
+                          }}
+                          className={`text-[9px] px-2 py-0.5 rounded flex-shrink-0 transition-colors ${isEditing ? 'text-gray-500 hover:text-gray-300 bg-white/5' : 'text-violet-500 hover:text-violet-300 bg-violet-900/20 border border-violet-800/30'}`}>
+                          {isEditing ? 'Cancel' : 'Edit'}
+                        </button>
+                      </div>
+
+                      {/* Inline edit form */}
+                      {isEditing && (
+                        <div className="border-t border-[#1e2030] px-3 py-2.5 space-y-2">
+                          <div>
+                            <label className="block text-[10px] text-gray-500 mb-1">Label</label>
+                            <input type="text" value={builtinDraft.label ?? ''} onChange={e => setBuiltinDraft(p => ({ ...p, label: e.target.value }))}
+                              className="w-full bg-[#0d0f1a] border border-[#2a2d3a] rounded px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-violet-800/60" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] text-gray-500 mb-1">Course Title</label>
+                            <input type="text" value={builtinDraft.courseTitle ?? ''} onChange={e => setBuiltinDraft(p => ({ ...p, courseTitle: e.target.value }))}
+                              className="w-full bg-[#0d0f1a] border border-[#2a2d3a] rounded px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-violet-800/60" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] text-gray-500 mb-1">Google Doc Template ID</label>
+                            <input type="text" value={builtinDraft.templateId ?? ''} onChange={e => setBuiltinDraft(p => ({ ...p, templateId: e.target.value }))}
+                              className="w-full bg-[#0d0f1a] border border-[#2a2d3a] rounded px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-violet-800/60 font-mono" />
+                          </div>
+                          <div className="flex items-center gap-2 pt-0.5">
+                            <button
+                              onClick={() => {
+                                const next = { ...builtInOverrides, [t.key]: builtinDraft }
+                                setBuiltInOverrides(next); writeLS(BUILTIN_OVERRIDES_KEY, next)
+                                setEditingBuiltin(null)
+                              }}
+                              className="flex items-center gap-1 bg-violet-900/60 hover:bg-violet-800/60 border border-violet-800/40 text-violet-300 rounded px-2.5 py-1 text-[10px] font-semibold transition-colors">
+                              <Save size={9} />Save
+                            </button>
+                            {isModified && (
+                              <button
+                                onClick={() => {
+                                  const next = { ...builtInOverrides }; delete next[t.key]
+                                  setBuiltInOverrides(next); writeLS(BUILTIN_OVERRIDES_KEY, next)
+                                  setEditingBuiltin(null)
+                                }}
+                                className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-red-400 transition-colors px-2 py-1 rounded hover:bg-red-900/10">
+                                <X size={9} />Reset to default
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </div>
 
@@ -924,7 +1028,7 @@ export function TranscriptionPanel({ pushLog }: Props) {
 
                   {/* Doc name preview */}
                   <p className="text-[10px] text-gray-600">
-                    → doc: <span className="font-mono text-gray-500">{templateKey} M{pad2(item.moduleNum || '1')}L{pad2(item.lessonNum || '1')} Transcript</span>
+                    → doc: <span className="font-mono text-gray-500">{templateKey} {item.footerLine2Override ? item.footerLine2Override.replace('Introduction', 'Intro') : `M${item.moduleNum || '1'}L${item.lessonNum || '1'}`} Transcript</span>
                   </p>
 
                   {/* Doc status */}

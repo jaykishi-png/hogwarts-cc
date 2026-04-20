@@ -13,17 +13,19 @@ export async function POST(req: NextRequest) {
       lessonTitle,
       moduleNum,
       lessonNum,
+      footerLine2Override,
       transcript,
       folderId,
     } = await req.json() as {
-      templateKey:  string
-      courseTitle?: string   // overrides the template's default courseTitle when provided
-      courseLevel:  string
-      lessonTitle:  string
-      moduleNum:    string
-      lessonNum:    string
-      transcript:   string
-      folderId?:    string
+      templateKey:          string
+      courseTitle?:         string
+      courseLevel:          string
+      lessonTitle:          string
+      moduleNum:            string
+      lessonNum:            string
+      footerLine2Override?: string
+      transcript:           string
+      folderId?:            string
     }
 
     if (!transcript?.trim()) {
@@ -35,23 +37,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Unknown template key: ${templateKey}` }, { status: 400 })
     }
 
-    // Zero-pad module and lesson numbers: "1" → "01"
+    // Build doc title — use short label for intro/outro, M#L# otherwise
     const pad = (n: string) => n.trim().padStart(2, '0')
     const paddedModule = pad(moduleNum)
     const paddedLesson = pad(lessonNum)
-
-    const docTitle = `${template.key} M${paddedModule}L${paddedLesson} Transcript`
+    const titleSuffix = footerLine2Override
+      ? footerLine2Override.replace('Introduction', 'Intro')
+      : `M${String(parseInt(paddedModule, 10))}L${String(parseInt(paddedLesson, 10))}`
+    const docTitle = `${template.key} ${titleSuffix} Transcript`
 
     const result = await createTranscriptDoc({
       templateId: template.templateId,
       docTitle,
       transcript: transcript.trim(),
       footer: {
-        courseTitle: courseTitle?.trim() || template.courseTitle,
-        courseLevel: (courseLevel.trim() || 'Beginner'),
-        lessonTitle: lessonTitle.trim(),
-        moduleNum:   paddedModule,
-        lessonNum:   paddedLesson,
+        courseTitle:         courseTitle?.trim() || template.courseTitle,
+        courseLevel:         courseLevel.trim() || 'Beginner',
+        lessonTitle:         lessonTitle.trim(),
+        moduleNum:           paddedModule,
+        lessonNum:           paddedLesson,
+        footerLine2Override,
       },
       folderId,
     })

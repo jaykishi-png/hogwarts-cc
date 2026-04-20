@@ -62,11 +62,12 @@ export interface CreateTranscriptDocOptions {
   /** Replaces {{BODY_COPY}} — inherits the styling you gave that placeholder */
   transcript:  string
   footer: {
-    courseTitle:  string
-    courseLevel:  string
-    lessonTitle:  string
-    moduleNum:    string  // already zero-padded: "01", "02" …
-    lessonNum:    string  // already zero-padded
+    courseTitle:          string
+    courseLevel:          string
+    lessonTitle:          string
+    moduleNum:            string  // already zero-padded: "01", "02" …
+    lessonNum:            string  // already zero-padded
+    footerLine2Override?: string  // replaces "Module X | Lesson Y" entirely
   }
   /** If provided, the new doc is created directly inside this Drive folder */
   folderId?: string
@@ -95,140 +96,75 @@ export async function createTranscriptDoc(
   const docId = copyRes.data.id
   if (!docId) throw new Error('Drive copy returned no document ID.')
 
-  // 2. Replace all placeholders in one batchUpdate.
-  // replaceAllText preserves the text style of the matched placeholder.
-  // {{BODY_COPY}} is the required body placeholder; the others are optional
-  // footer placeholders that will be replaced if the template includes them.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const requests: any[] = []
+  // 2. Replace all placeholders in two separate batchUpdate calls.
+  //
+  //    ORDERING IS CRITICAL: {{COURSE_TITLE}} must go LAST.
+  //
+  //    When Google Docs replaces a placeholder mid-run, it splits that run at
+  //    the replacement boundary. Any remaining placeholder text in the same run
+  //    (e.g. {{COURSE LEVEL}} after {{COURSE_TITLE}}) may end up split across
+  //    two new runs and become unsearchable by a subsequent replaceAllText.
+  //
+  //    Call A: body copy + every placeholder EXCEPT COURSE_TITLE (both variants).
+  //    Call B: COURSE_TITLE only (both variants), after all other runs are clean.
+  //
+  //    This ensures {{COURSE LEVEL}} (space variant) is always found in-run
+  //    before any COURSE_TITLE replacement can fragment it.
+  const { courseTitle, courseLevel, lessonTitle, moduleNum, lessonNum, footerLine2Override } = opts.footer
 
-  const replacements: Record<string, string> = {
-    '{{BODY_COPY}}':    formatTranscript(opts.transcript),
-    '{{COURSE_TITLE}}': opts.footer.courseTitle,
-    '{{COURSE_LEVEL}}': opts.footer.courseLevel,
-    '{{LESSON_TITLE}}': opts.footer.lessonTitle,
-    '{{MODULE_NUM}}':   opts.footer.moduleNum,
-    '{{LESSON_NUM}}':   opts.footer.lessonNum,
-  }
+  // Call A — body + all non-COURSE_TITLE placeholders (underscore + space variants).
+  //
+  // When footerLine2Override is set (intro / outro files), we replace the static
+  // "Module " prefix and " | Lesson " separator with empty strings and put the
+  // override text into the {{MODULE_NUM}} slot — leaving no stray literal text.
+  const moduleLine2Requests = footerLine2Override
+    ? [
+        // Underscore variants
+        { replaceAllText: { containsText: { text: 'Module ',        matchCase: true }, replaceText: ''                   } },
+        { replaceAllText: { containsText: { text: '{{MODULE_NUM}}', matchCase: true }, replaceText: footerLine2Override  } },
+        { replaceAllText: { containsText: { text: ' | Lesson ',     matchCase: true }, replaceText: ''                   } },
+        { replaceAllText: { containsText: { text: '{{LESSON_NUM}}', matchCase: true }, replaceText: ''                   } },
+        // Space variants
+        { replaceAllText: { containsText: { text: '{{MODULE NUM}}', matchCase: true }, replaceText: footerLine2Override  } },
+        { replaceAllText: { containsText: { text: '{{LESSON NUM}}', matchCase: true }, replaceText: ''                   } },
+      ]
+    : [
+        { replaceAllText: { containsText: { text: '{{MODULE_NUM}}', matchCase: true }, replaceText: moduleNum } },
+        { replaceAllText: { containsText: { text: '{{MODULE NUM}}', matchCase: true }, replaceText: moduleNum } },
+        { replaceAllText: { containsText: { text: '{{LESSON_NUM}}', matchCase: true }, replaceText: lessonNum } },
+        { replaceAllText: { containsText: { text: '{{LESSON NUM}}', matchCase: true }, replaceText: lessonNum } },
+      ]
 
-  for (const [placeholder, value] of Object.entries(replacements)) {
-    requests.push({
-      replaceAllText: {
-        containsText: { text: placeholder, matchCase: true },
-        replaceText:  value,
-      },
-    })
-  }
-
-  await docs.documents.batchUpdate({
+  const resA = await docs.documents.batchUpdate({
     documentId:  docId,
-    requestBody: { requests },
-  })
+    requestBody: {
+      requests: [
+        { replaceAllText: { containsText: { text: '{{BODY_COPY}}',    matchCase: true }, replaceText: formatTranscript(opts.transcript) } },
+        { replaceAllText: { containsText: { text: '{{COURSE_LEVEL}}', matchCase: true }, replaceText: courseLevel  } },
+        { replaceAllText: { containsText: { text: '{{COURSE LEVEL}}', matchCase: true }, replaceText: courseLevel  } },
+        { replaceAllText: { containsText: { text: '{{LESSON_TITLE}}', matchCase: true }, replaceText: lessonTitle  } },
+        { replaceAllText: { containsText: { text: '{{LESSON TITLE}}', matchCase: true }, replaceText: lessonTitle  } },
+        ...moduleLine2Requests,
+      ],
+    },
+  });
+  const phLabels = footerLine2Override
+    ? ['{{BODY_COPY}}','{{COURSE_LEVEL}}','{{COURSE LEVEL}}','{{LESSON_TITLE}}','{{LESSON TITLE}}','Module ','{{MODULE_NUM}}(override)',' | Lesson ','{{LESSON_NUM}}','{{MODULE NUM}}(override)','{{LESSON NUM}}']
+    : ['{{BODY_COPY}}','{{COURSE_LEVEL}}','{{COURSE LEVEL}}','{{LESSON_TITLE}}','{{LESSON TITLE}}','{{MODULE_NUM}}','{{MODULE NUM}}','{{LESSON_NUM}}','{{LESSON NUM}}']
+  phLabels.forEach((ph, i) => console.log(`[transcript-to-doc] A[${i}] "${ph}" → ${resA.data.replies?.[i]?.replaceAllText?.occurrencesChanged ?? 0}`))
 
-  // 3. Write course metadata into the document footer.
-  //
-  // We read the document AFTER the replaceAllText step to get the real
-  // footer ID from documentStyle.defaultFooterId.  Then we DELETE the
-  // entire existing footer content (which may contain un-replaceable
-  // placeholder text due to Google Docs internal text-run splitting) and
-  // INSERT fresh metadata so it always shows the correct values regardless
-  // of what format the template's footer uses.
-  //
-  // If the template has no footer at all we fall back to appending the
-  // metadata as a block at the end of the body.
-  const docSnap = await docs.documents.get({ documentId: docId })
-
-  const metaText =
-    `${opts.footer.courseTitle} \u2022 ${opts.footer.courseLevel}\n` +
-    `Module ${opts.footer.moduleNum} | Lesson ${opts.footer.lessonNum}\n` +
-    opts.footer.lessonTitle
-
-  const defaultFooterId = docSnap.data.documentStyle?.defaultFooterId
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const footerMap = docSnap.data.footers as any
-
-  if (defaultFooterId && footerMap?.[defaultFooterId]) {
-    // ── Footer exists — replace text while preserving per-line formatting ─
-    //
-    // Strategy: for each footer paragraph, INSERT new text first (inheriting
-    // the original run styling — bold/red on line 1, normal on lines 2-3),
-    // then DELETE the old text (now shifted right by the new text's length).
-    // Process paragraphs in REVERSE index order so earlier paragraphs' indices
-    // remain stable when we apply each operation in a single batchUpdate.
-    //
-    // This avoids:
-    //  • cross-paragraph deletes (which can mis-handle structural elements)
-    //  • inserting into an empty paragraph (which loses run-level formatting)
-    //  • off-by-one from sectionBreak elements at the footer segment start
-
-    const content    = footerMap[defaultFooterId].content ?? []
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const paragraphs = (content as any[]).filter((c) => c.paragraph)
-
-    const footerLines = [
-      `${opts.footer.courseTitle} \u2022 ${opts.footer.courseLevel}`,
-      `Module ${opts.footer.moduleNum} | Lesson ${opts.footer.lessonNum}`,
-      opts.footer.lessonTitle,
-    ]
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const footerReqs: any[] = []
-
-    const limit = Math.min(paragraphs.length, footerLines.length)
-    for (let i = limit - 1; i >= 0; i--) {
-      const para       = paragraphs[i]
-      const paraStart  = para.startIndex  as number
-      const paraEnd    = (para.endIndex   as number) - 1  // exclude trailing \n
-      const oldLen     = paraEnd - paraStart
-      const newText    = footerLines[i]
-
-      // Insert new text at paragraph start — new text inherits the run style
-      // (bold, red, size) of the original first character at paraStart
-      footerReqs.push({
-        insertText: {
-          location: { segmentId: defaultFooterId, index: paraStart },
-          text:     newText,
-        },
-      })
-
-      // Delete old text — now shifted right by newText.length
-      if (oldLen > 0) {
-        footerReqs.push({
-          deleteContentRange: {
-            range: {
-              segmentId:  defaultFooterId,
-              startIndex: paraStart + newText.length,
-              endIndex:   paraStart + newText.length + oldLen,
-            },
-          },
-        })
-      }
-    }
-
-    if (footerReqs.length > 0) {
-      await docs.documents.batchUpdate({
-        documentId:  docId,
-        requestBody: { requests: footerReqs },
-      })
-    }
-  } else {
-    // ── No footer in template: append metadata to the body ───────────────
-    const bodyContent = docSnap.data.body?.content ?? []
-    const lastElem    = bodyContent[bodyContent.length - 1]
-    const insertAt    = ((lastElem?.endIndex ?? 2) - 1) as number
-
-    await docs.documents.batchUpdate({
-      documentId:  docId,
-      requestBody: {
-        requests: [{
-          insertText: {
-            location: { index: insertAt },
-            text:     `\n\n${metaText}`,
-          },
-        }],
-      },
-    })
-  }
+  // Call B — COURSE_TITLE last (both variants), after no other placeholders remain in those runs
+  const resB = await docs.documents.batchUpdate({
+    documentId:  docId,
+    requestBody: {
+      requests: [
+        { replaceAllText: { containsText: { text: '{{COURSE_TITLE}}', matchCase: true }, replaceText: courseTitle  } },
+        { replaceAllText: { containsText: { text: '{{COURSE TITLE}}', matchCase: true }, replaceText: courseTitle  } },
+      ],
+    },
+  });
+  ['{{COURSE_TITLE}}','{{COURSE TITLE}}']
+    .forEach((ph, i) => console.log(`[transcript-to-doc] B[${i}] "${ph}" → ${resB.data.replies?.[i]?.replaceAllText?.occurrencesChanged ?? 0}`))
 
   return {
     docId,

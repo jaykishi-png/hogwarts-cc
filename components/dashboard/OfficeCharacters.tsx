@@ -1,5 +1,7 @@
 'use client'
 
+import { useEffect, useRef, useState } from 'react'
+
 /**
  * Pixel-art top-down RPG sprites — one per Hogwarts agent.
  *
@@ -33,81 +35,68 @@ const SKIN   = '#f8c880'   // warm golden
 const SKIN_P = '#e8d8c0'   // pale  (Snape)
 const SKIN_R = '#d08855'   // ruddy (Hagrid)
 
+// ─── DUMBLEDORE sprite-sheet constants ─────────────────────────────────────────
+const DUMB_SHEET_W = 1684
+const DUMB_SHEET_H = 2528
+const DUMB_SCALE   = 0.25          // renders sheet at 421×632 px
+const DUMB_DISP_W  = 80            // visible container width
+const DUMB_DISP_H  = 120           // visible container height
+
+// Per-animation row data (original pixel coordinates).
+// x(i) → left edge of frame i, y → top of row, fw/fh → frame size, fps → speed
+const DUMB_ANIM = {
+  idle:     { n: 8, x: (i: number) => 39 + i * 202,        y: 45,   fw: 202, fh: 479, fps: 6 },
+  walk:     { n: 8, x: (i: number) => 53 + i * 199,        y: 628,  fw: 199, fh: 426, fps: 8 },
+  talking:  { n: 5, x: (i: number) => 52 + i * 318,        y: 1158, fw: 318, fh: 425, fps: 6 },
+  working:  { n: 3, x: (i: number) => [53, 583, 1167][i],  y: 1661, fw: 530, fh: 452, fps: 3 },
+  sleeping: { n: 3, x: (i: number) => 53  + i * 530,       y: 2191, fw: 530, fh: 292, fps: 2 },
+} as const
+type DumbAnimKey = keyof typeof DUMB_ANIM
+
 // ─── DUMBLEDORE ────────────────────────────────────────────────────────────────
-// Pointed wizard hat, flowing white beard, vivid purple robes, glowing staff
+// Sprite-sheet animation from public/agents/DUMBLEDORE_sprite.png
 export function DumbledoreCharacter({ isWalking, status }: CharProps) {
+  const animKey: DumbAnimKey =
+    isWalking               ? 'walk'     :
+    status === 'in-meeting' ? 'talking'  :
+    status === 'working'    ? 'working'  :
+    status === 'away'       ? 'sleeping' :
+    'idle'
+
+  const [frame, setFrame] = useState(0)
+  const prevKey = useRef(animKey)
+
+  useEffect(() => {
+    if (prevKey.current !== animKey) {
+      prevKey.current = animKey
+      setFrame(0)
+    }
+    const anim = DUMB_ANIM[animKey]
+    const id = setInterval(() => setFrame(f => (f + 1) % anim.n), 1000 / anim.fps)
+    return () => clearInterval(id)
+  }, [animKey])
+
+  const anim   = DUMB_ANIM[animKey]
+  const scaledX  = anim.x(frame) * DUMB_SCALE
+  const scaledY  = anim.y        * DUMB_SCALE
+  const scaledFW = anim.fw       * DUMB_SCALE
+  const scaledFH = anim.fh       * DUMB_SCALE
+
+  // Center frame inside the fixed display box (clip if frame is wider/taller)
+  const bgX = Math.round(-scaledX + (DUMB_DISP_W - scaledFW) / 2)
+  const bgY = Math.round(-scaledY + (DUMB_DISP_H - scaledFH) / 2)
+
   return (
-    <svg width="60" height="90" viewBox="0 0 20 30"
-      className={isWalking ? 'agent-walking' : ''} {...PX}>
-
-      {/* tall pointed wizard hat */}
-      <rect x="8"  y="0"  width="4"  height="2"  fill="#5b21b6" />
-      <rect x="6"  y="2"  width="8"  height="2"  fill="#6d28d9" />
-      <rect x="4"  y="4"  width="12" height="2"  fill="#7c3aed" />
-      <rect x="2"  y="6"  width="16" height="2"  fill="#6d28d9" />  {/* brim */}
-      <rect x="3"  y="6"  width="14" height="1"  fill="#a78bfa" />  {/* brim highlight */}
-      {/* tassel */}
-      <rect x="14" y="0"  width="2"  height="7"  fill="#c4b5fd" />
-      <rect x="14" y="6"  width="4"  height="2"  fill="#c4b5fd" />
-
-      {/* white fluffy hair — sides peek out */}
-      <rect x="1"  y="7"  width="4"  height="6"  fill="#f1f5f9" />
-      <rect x="15" y="7"  width="4"  height="6"  fill="#f1f5f9" />
-      <rect x="2"  y="7"  width="2"  height="3"  fill="#e2e8f0" />
-
-      {/* big face */}
-      <rect x="4"  y="7"  width="12" height="8"  fill={SKIN} className="char-body" />
-      {/* left eye 2×2 + eyelid */}
-      <rect x="6"  y="9"  width="2"  height="2"  fill="#1c1917" />
-      <rect className="eyelid eyelid-l" x="6"  y="9"  width="2"  height="2"  fill={SKIN} />
-      {/* right eye 2×2 + eyelid */}
-      <rect x="12" y="9"  width="2"  height="2"  fill="#1c1917" />
-      <rect className="eyelid eyelid-r" x="12" y="9"  width="2"  height="2"  fill={SKIN} />
-      {/* star-like glasses hint */}
-      <rect x="5"  y="9"  width="4"  height="3"  fill="none" stroke="#a0a0c0" strokeWidth="0.6" opacity="0.5" />
-      <rect x="11" y="9"  width="4"  height="3"  fill="none" stroke="#a0a0c0" strokeWidth="0.6" opacity="0.5" />
-      {/* nose */}
-      <rect x="9"  y="11" width="2"  height="2"  fill="#c8905a" opacity="0.5" />
-      {/* mouth */}
-      {status === 'in-meeting'
-        ? <rect className="mouth-talking" x="8" y="13" width="4" height="2" fill="#7c2d12" />
-        : <rect x="8" y="13" width="4" height="1" fill="#b07040" opacity="0.8" />}
-
-      {/* massive flowing white beard */}
-      <rect x="3"  y="15" width="14" height="4"  fill="#f8fafc" />
-      <rect x="4"  y="18" width="12" height="3"  fill="#e2e8f0" />
-      <rect x="6"  y="20" width="8"  height="2"  fill="#f1f5f9" />
-
-      {/* bright purple robe */}
-      <rect x="4"  y="19" width="12" height="7"  fill="#7c3aed" className="char-body" />
-      <rect x="8"  y="19" width="4"  height="7"  fill="#8b5cf6" opacity="0.45" />
-      <rect x="9"  y="19" width="2"  height="7"  fill="#a78bfa" opacity="0.25" />
-
-      {/* left arm */}
-      <g className="arm-left">
-        <rect x="2"  y="19" width="2"  height="5"  fill="#6d28d9" />
-        <rect x="2"  y="24" width="2"  height="2"  fill={SKIN} />
-      </g>
-      {/* right arm + glowing staff */}
-      <g className="arm-right">
-        <rect x="16" y="19" width="2"  height="5"  fill="#6d28d9" />
-        <rect x="16" y="24" width="2"  height="2"  fill={SKIN} />
-        <rect x="18" y="6"  width="2"  height="18" fill="#ddd6fe" />
-        <rect x="17" y="4"  width="4"  height="4"  fill="#7c3aed" />
-        <rect x="18" y="4"  width="2"  height="3"  fill="#ede9fe" />
-        <rect x="18" y="3"  width="2"  height="2"  fill="#a78bfa" opacity="0.8" />
-      </g>
-
-      {/* short chunky legs */}
-      <g className="leg-left">
-        <rect x="4"  y="26" width="5"  height="4"  fill="#5b21b6" />
-        <rect x="4"  y="29" width="6"  height="1"  fill="#4c1d95" />
-      </g>
-      <g className="leg-right">
-        <rect x="11" y="26" width="5"  height="4"  fill="#5b21b6" />
-        <rect x="10" y="29" width="6"  height="1"  fill="#4c1d95" />
-      </g>
-    </svg>
+    <div style={{
+      width:              DUMB_DISP_W,
+      height:             DUMB_DISP_H,
+      backgroundImage:    'url(/agents/DUMBLEDORE_sprite.png)',
+      backgroundSize:     `${Math.round(DUMB_SHEET_W * DUMB_SCALE)}px ${Math.round(DUMB_SHEET_H * DUMB_SCALE)}px`,
+      backgroundPosition: `${bgX}px ${bgY}px`,
+      backgroundRepeat:   'no-repeat',
+      imageRendering:     'pixelated',
+      overflow:           'hidden',
+    }} />
   )
 }
 
