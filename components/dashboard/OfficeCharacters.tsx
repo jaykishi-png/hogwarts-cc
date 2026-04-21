@@ -96,27 +96,19 @@ export function DumbledoreCharacter({ isWalking: _isWalking, status: _status }: 
   const src = DUMB_FRAMES[dir][frame]
 
   return (
-    // Clip the 1920×1080 frame to a small card-sized window, centred
-    <div style={{
-      width:    80,
-      height:   120,
-      overflow: 'hidden',
-      position: 'relative',
-    }}>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={src}
-        alt="Dumbledore"
-        style={{
-          height:          120,
-          width:           'auto',
-          position:        'absolute',
-          left:            '50%',
-          transform:       'translateX(-50%)',
-          imageRendering:  'pixelated',
-        }}
-      />
-    </div>
+    // Frames are pre-cropped to the character bounds (615×906px)
+    // At height:120 they render ~81px wide — no clipping needed
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt="Dumbledore"
+      style={{
+        height:         120,
+        width:          'auto',
+        imageRendering: 'pixelated',
+        display:        'block',
+      }}
+    />
   )
 }
 
