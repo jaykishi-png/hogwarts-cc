@@ -1729,7 +1729,8 @@ export function HogwartsShell() {
                 className="absolute inset-0"
                 style={{
                   backgroundImage: 'url(/hogwarts-bg_Clean.png)',
-                  backgroundSize: 'cover',
+                  backgroundSize: 'contain',
+                  backgroundRepeat: 'no-repeat',
                   backgroundPosition: 'center',
                   transform: zoomedRoom ? 'scale(2.6)' : 'scale(1)',
                   transformOrigin: zoomedRoom ? ROOMS[zoomedRoom].zoomOrigin : 'center center',
