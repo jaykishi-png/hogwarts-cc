@@ -35,68 +35,88 @@ const SKIN   = '#f8c880'   // warm golden
 const SKIN_P = '#e8d8c0'   // pale  (Snape)
 const SKIN_R = '#d08855'   // ruddy (Hagrid)
 
-// ─── DUMBLEDORE sprite-sheet constants ─────────────────────────────────────────
-const DUMB_SHEET_W = 1684
-const DUMB_SHEET_H = 2528
-const DUMB_SCALE   = 0.25          // renders sheet at 421×632 px
-const DUMB_DISP_W  = 80            // visible container width
-const DUMB_DISP_H  = 120           // visible container height
+// ─── DUMBLEDORE frame-based animation ──────────────────────────────────────────
+// Frames 1–8 loop during normal walking.
+// Frames 9–10 play once (in order) when the character reaches a boundary
+// and switches direction. Frame index is 0-based internally.
 
-// Per-animation row data (original pixel coordinates).
-// x(i) → left edge of frame i, y → top of row, fw/fh → frame size, fps → speed
-const DUMB_ANIM = {
-  idle:     { n: 8, x: (i: number) => 39 + i * 202,        y: 45,   fw: 202, fh: 479, fps: 6 },
-  walk:     { n: 8, x: (i: number) => 53 + i * 199,        y: 628,  fw: 199, fh: 426, fps: 8 },
-  talking:  { n: 5, x: (i: number) => 52 + i * 318,        y: 1158, fw: 318, fh: 425, fps: 6 },
-  working:  { n: 3, x: (i: number) => [53, 583, 1167][i],  y: 1661, fw: 530, fh: 452, fps: 3 },
-  sleeping: { n: 3, x: (i: number) => 53  + i * 530,       y: 2191, fw: 530, fh: 292, fps: 2 },
-} as const
-type DumbAnimKey = keyof typeof DUMB_ANIM
+const DUMB_WALK_FRAMES = 8          // indices 0–7 loop during walking
+const DUMB_TURN_FRAMES = [8, 9]     // indices 8 & 9 play on direction switch
+const DUMB_FPS         = 10
+
+const DUMB_FRAMES = {
+  right: Array.from({ length: 10 }, (_, i) =>
+    `/agents/dumbledore/walkRight/Dumbledore_WalkingRight_${i + 1}.png`
+  ),
+  left: Array.from({ length: 10 }, (_, i) =>
+    `/agents/dumbledore/walkLeft/Dumbledore_WalkingLeft_${i + 1}.png`
+  ),
+}
 
 // ─── DUMBLEDORE ────────────────────────────────────────────────────────────────
-// Sprite-sheet animation from public/agents/DUMBLEDORE_sprite.png
-export function DumbledoreCharacter({ isWalking, status }: CharProps) {
-  const animKey: DumbAnimKey =
-    isWalking               ? 'walk'     :
-    status === 'in-meeting' ? 'talking'  :
-    status === 'working'    ? 'working'  :
-    status === 'away'       ? 'sleeping' :
-    'idle'
+export function DumbledoreCharacter({ isWalking: _isWalking, status: _status }: CharProps) {
+  const [dir,     setDir]     = useState<'right' | 'left'>('right')
+  const [frame,   setFrame]   = useState(0)
+  const [turning, setTurning] = useState(false)
 
-  const [frame, setFrame] = useState(0)
-  const prevKey = useRef(animKey)
+  const dirRef     = useRef(dir)
+  const frameRef   = useRef(frame)
+  const turningRef = useRef(turning)
+  dirRef.current     = dir
+  frameRef.current   = frame
+  turningRef.current = turning
 
   useEffect(() => {
-    if (prevKey.current !== animKey) {
-      prevKey.current = animKey
-      setFrame(0)
-    }
-    const anim = DUMB_ANIM[animKey]
-    const id = setInterval(() => setFrame(f => (f + 1) % anim.n), 1000 / anim.fps)
-    return () => clearInterval(id)
-  }, [animKey])
+    const interval = setInterval(() => {
+      if (turningRef.current) {
+        const cur = frameRef.current
+        if (cur === DUMB_TURN_FRAMES[0]) {
+          // Advance to second turn frame
+          setFrame(DUMB_TURN_FRAMES[1])
+        } else {
+          // Turn complete — flip direction, reset to frame 0
+          setTurning(false)
+          setDir(d => d === 'right' ? 'left' : 'right')
+          setFrame(0)
+        }
+      } else {
+        const next = (frameRef.current + 1) % DUMB_WALK_FRAMES
+        // When looping back to 0, trigger the turn sequence
+        if (next === 0) {
+          setTurning(true)
+          setFrame(DUMB_TURN_FRAMES[0])
+        } else {
+          setFrame(next)
+        }
+      }
+    }, 1000 / DUMB_FPS)
+    return () => clearInterval(interval)
+  }, [])
 
-  const anim   = DUMB_ANIM[animKey]
-  const scaledX  = anim.x(frame) * DUMB_SCALE
-  const scaledY  = anim.y        * DUMB_SCALE
-  const scaledFW = anim.fw       * DUMB_SCALE
-  const scaledFH = anim.fh       * DUMB_SCALE
-
-  // Center frame inside the fixed display box (clip if frame is wider/taller)
-  const bgX = Math.round(-scaledX + (DUMB_DISP_W - scaledFW) / 2)
-  const bgY = Math.round(-scaledY + (DUMB_DISP_H - scaledFH) / 2)
+  const src = DUMB_FRAMES[dir][frame]
 
   return (
+    // Clip the 1920×1080 frame to a small card-sized window, centred
     <div style={{
-      width:              DUMB_DISP_W,
-      height:             DUMB_DISP_H,
-      backgroundImage:    'url(/agents/DUMBLEDORE_sprite.png)',
-      backgroundSize:     `${Math.round(DUMB_SHEET_W * DUMB_SCALE)}px ${Math.round(DUMB_SHEET_H * DUMB_SCALE)}px`,
-      backgroundPosition: `${bgX}px ${bgY}px`,
-      backgroundRepeat:   'no-repeat',
-      imageRendering:     'pixelated',
-      overflow:           'hidden',
-    }} />
+      width:    80,
+      height:   120,
+      overflow: 'hidden',
+      position: 'relative',
+    }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt="Dumbledore"
+        style={{
+          height:          120,
+          width:           'auto',
+          position:        'absolute',
+          left:            '50%',
+          transform:       'translateX(-50%)',
+          imageRendering:  'pixelated',
+        }}
+      />
+    </div>
   )
 }
 
