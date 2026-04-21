@@ -1737,19 +1737,17 @@ export function HogwartsShell() {
                 }}
                 onClick={e => e.stopPropagation()}
               >
-                {/* ── Room zones (transparent overlays) ───────────────────────── */}
+                {/* ── Room zones (transparent overlays — label + click only) ──── */}
                 {(Object.entries(ROOMS) as [RoomId, RoomConfig][]).map(([roomId, room]) => {
-                  const occupants = agents.filter(a => a.currentRoom === roomId)
-                  const isLive    = roomId === 'great-hall' && occupants.length > 0
-                  const isZoomed  = zoomedRoom === roomId
+                  const isLive   = roomId === 'great-hall' && agents.some(a => a.currentRoom === roomId)
+                  const isZoomed = zoomedRoom === roomId
                   return (
                     <div
                       key={roomId}
-                      className={`absolute transition-all duration-300 ${isZoomed ? 'ring-2 ring-white/30' : ''}`}
+                      className="absolute"
                       style={{ ...room.style }}
                       onClick={e => { e.stopPropagation(); toggleZoom(roomId) }}
                     >
-                      {/* Room label button */}
                       <button
                         className={`absolute top-2 left-2 z-20 flex items-center gap-1.5 rounded-md px-2 py-1
                           border backdrop-blur-sm transition-all duration-200 cursor-zoom-in
@@ -1771,8 +1769,6 @@ export function HogwartsShell() {
                           )}
                         </div>
                       </button>
-                      {/* Furniture overlay */}
-                      <Furniture roomId={roomId} occupied={occupants.length > 0} />
                     </div>
                   )
                 })}
