@@ -556,19 +556,19 @@ export function HogwartsShell() {
 
   // ── Office helpers ───────────────────────────────────────────────────────
   function getRoomFromPos(x: number, y: number): RoomId {
-    // great-hall spans x 27-64%, y 0-77%
-    if (x >= 27 && x < 64 && y < 77) return 'great-hall'
-    if (y < 45) {
-      if (x < 27) return 'headmaster'
+    // great-hall spans x 30-69%, y 8-77%
+    if (x >= 30 && x < 69 && y >= 8 && y < 77) return 'great-hall'
+    if (y < 48) {
+      if (x < 30) return 'headmaster'
       return 'lab'
     }
     if (y < 77) {
-      if (x < 27) return 'library'
-      if (x < 64) return 'great-hall'
+      if (x < 30) return 'library'
+      if (x < 69) return 'great-hall'
       return 'requirement'
     }
-    if (x < 27) return 'auror'
-    if (x < 64) return 'clocktower'
+    if (x < 30) return 'auror'
+    if (x < 69) return 'clocktower'
     return 'broomsticks'
   }
 
@@ -1729,9 +1729,7 @@ export function HogwartsShell() {
                 className="absolute inset-0"
                 style={{
                   backgroundImage: 'url(/hogwarts-bg_Clean.png)',
-                  backgroundSize: 'contain',
-                  backgroundRepeat: 'no-repeat',
-                  backgroundPosition: 'center',
+                  backgroundSize: '100% 100%',
                   transform: zoomedRoom ? 'scale(2.6)' : 'scale(1)',
                   transformOrigin: zoomedRoom ? ROOMS[zoomedRoom].zoomOrigin : 'center center',
                   transition: 'transform 0.45s cubic-bezier(0.4,0,0.2,1), transform-origin 0.45s cubic-bezier(0.4,0,0.2,1)',

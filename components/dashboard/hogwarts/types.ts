@@ -133,54 +133,56 @@ export const BADGE_MAP: Record<string, string> = {
 
 // ─── Room config ──────────────────────────────────────────────────────────────
 
+// Room positions calibrated to hogwarts-bg_Clean.png (1402×1122px, background-size:100% 100%)
+// Col dividers: ~30% and ~69% | Row dividers: ~8% (post-title), ~48%, ~77%
 export const ROOMS: Record<RoomId, RoomConfig> = {
   'headmaster': {
     num: 1, label: "The Headmaster's Tower", sublabel: 'Private', emoji: '🔮',
-    style: { left: '0%', top: '0%', width: '27%', height: '45%' },
+    style: { left: '1.5%', top: '8%', width: '28.5%', height: '40%' },
     border: 'border-purple-600/40', bg: 'bg-purple-950/20', textColor: 'text-purple-300',
-    zoomOrigin: '13.5% 22.5%',
+    zoomOrigin: '15.5% 28%',
   },
   'great-hall': {
     num: 2, label: 'The Great Hall', sublabel: 'Meeting Room', emoji: '🏛️',
-    style: { left: '27%', top: '0%', width: '37%', height: '77%' },
+    style: { left: '30%', top: '8%', width: '39%', height: '69%' },
     border: 'border-blue-500/40', bg: 'bg-blue-950/15', textColor: 'text-blue-300',
-    zoomOrigin: '45.5% 38.5%', isMeeting: true,
+    zoomOrigin: '49.5% 42.5%', isMeeting: true,
   },
   'library': {
     num: 3, label: 'The Library', sublabel: 'Restricted Section', emoji: '📚',
-    style: { left: '0%', top: '45%', width: '27%', height: '32%' },
+    style: { left: '1.5%', top: '48%', width: '28.5%', height: '29%' },
     border: 'border-amber-700/40', bg: 'bg-amber-950/15', textColor: 'text-amber-300',
-    zoomOrigin: '13.5% 61%',
+    zoomOrigin: '15.5% 62.5%',
   },
   'lab': {
     num: 4, label: "Snape's Dungeons", sublabel: 'AI Research', emoji: '⚗️',
-    style: { left: '64%', top: '0%', width: '36%', height: '45%' },
+    style: { left: '69%', top: '8%', width: '29.5%', height: '40%' },
     border: 'border-slate-500/40', bg: 'bg-slate-900/20', textColor: 'text-slate-300',
-    zoomOrigin: '82% 22.5%',
+    zoomOrigin: '83.5% 28%',
   },
   'requirement': {
     num: 5, label: 'The Room of Requirement', sublabel: 'Tools & Resources', emoji: '✨',
-    style: { left: '64%', top: '45%', width: '36%', height: '32%' },
+    style: { left: '69%', top: '48%', width: '29.5%', height: '29%' },
     border: 'border-fuchsia-600/40', bg: 'bg-fuchsia-950/15', textColor: 'text-fuchsia-300',
-    zoomOrigin: '82% 61%',
+    zoomOrigin: '83.5% 62.5%',
   },
   'auror': {
     num: 6, label: 'The Auror Office', sublabel: 'Operations', emoji: '🛡️',
-    style: { left: '0%', top: '77%', width: '27%', height: '23%' },
+    style: { left: '1.5%', top: '77%', width: '28.5%', height: '21%' },
     border: 'border-green-700/40', bg: 'bg-green-950/15', textColor: 'text-green-300',
-    zoomOrigin: '13.5% 88.5%',
+    zoomOrigin: '15.5% 87.5%',
   },
   'clocktower': {
     num: 7, label: 'The Clock Tower', sublabel: 'Creative Studio', emoji: '🕰️',
-    style: { left: '27%', top: '77%', width: '37%', height: '23%' },
+    style: { left: '30%', top: '77%', width: '39%', height: '21%' },
     border: 'border-orange-700/40', bg: 'bg-orange-950/15', textColor: 'text-orange-300',
-    zoomOrigin: '45.5% 88.5%',
+    zoomOrigin: '49.5% 87.5%',
   },
   'broomsticks': {
     num: 8, label: 'The Three Broomsticks', sublabel: 'Common Room', emoji: '🍺',
-    style: { left: '64%', top: '77%', width: '36%', height: '23%' },
+    style: { left: '69%', top: '77%', width: '29.5%', height: '21%' },
     border: 'border-yellow-700/40', bg: 'bg-yellow-950/15', textColor: 'text-yellow-300',
-    zoomOrigin: '82% 88.5%',
+    zoomOrigin: '83.5% 87.5%',
   },
 }
 
