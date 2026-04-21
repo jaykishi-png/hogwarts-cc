@@ -96,19 +96,22 @@ export function DumbledoreCharacter({ isWalking: _isWalking, status: _status }: 
   const src = DUMB_FRAMES[dir][frame]
 
   return (
-    // Frames are pre-cropped to the character bounds (615×906px)
-    // At height:120 they render ~81px wide — no clipping needed
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={src}
-      alt="Dumbledore"
-      style={{
-        height:         120,
-        width:          'auto',
-        imageRendering: 'pixelated',
-        display:        'block',
-      }}
-    />
+    // Fixed 82×120 box — object-fit:contain keeps the 615×906 frame
+    // proportional regardless of any global CSS max-width rules
+    <div style={{ width: 82, height: 120, flexShrink: 0 }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt="Dumbledore"
+        style={{
+          width:          82,
+          height:         120,
+          objectFit:      'contain',
+          imageRendering: 'pixelated',
+          display:        'block',
+        }}
+      />
+    </div>
   )
 }
 
