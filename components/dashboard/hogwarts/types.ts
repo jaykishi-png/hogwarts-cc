@@ -10,7 +10,7 @@ import {
 
 // ─── Office types ─────────────────────────────────────────────────────────────
 
-export type RoomId      = 'headmaster' | 'great-hall' | 'lab' | 'operations' | 'creative' | 'archive' | 'common'
+export type RoomId      = 'headmaster' | 'great-hall' | 'library' | 'lab' | 'requirement' | 'auror' | 'clocktower' | 'broomsticks'
 export type AgentStatus = 'online' | 'working' | 'in-meeting' | 'away'
 export interface Pos { x: number; y: number }
 export interface AgentState {
@@ -39,35 +39,37 @@ export interface Conversation {
 }
 
 export interface RoomConfig {
-  label: string; sublabel: string; emoji: string
-  style: React.CSSProperties; border: string; bg: string; textColor: string; isMeeting?: boolean
+  label: string; sublabel: string; emoji: string; num: number
+  style: React.CSSProperties; border: string; bg: string; textColor: string
+  zoomOrigin: string
+  isMeeting?: boolean
 }
 
 // ─── Agent master data ────────────────────────────────────────────────────────
 
 export const AGENTS_DEF = [
-  { name: 'DUMBLEDORE', role: 'Chief of Staff',          commands: ['/brief', '/eod'],         color: 'purple',  homeRoom: 'headmaster' as const,  avatar: '/agents/DUMBLEDORE_Cyborg.png'  },
-  { name: 'HERMIONE',   role: 'Production Controller',   commands: ['/status', '/blockers'],    color: 'amber',   homeRoom: 'operations' as const,  avatar: '/agents/HERMIONE_Cyborg.png'    },
-  { name: 'HARRY',      role: 'Creative Review',         commands: ['/review'],                color: 'red',     homeRoom: 'creative' as const,    avatar: '/agents/HARRY_Cyborg.png'       },
-  { name: 'RON',        role: 'Strategic Ideation',      commands: ['/brainstorm'],            color: 'orange',  homeRoom: 'creative' as const,    avatar: '/agents/RON_Cyborg.png'         },
-  { name: 'McGONAGALL', role: 'SOP Builder',             commands: ['/sop', '/workflow'],      color: 'green',   homeRoom: 'archive' as const,     avatar: '/agents/McGONAGALL_Cyborg.png'  },
-  { name: 'SNAPE',      role: 'AI Scout',                commands: ['/ai-scout', '/mp'],       color: 'slate',   homeRoom: 'lab' as const,         avatar: '/agents/SNAPE_Cyborg.png'       },
-  { name: 'HAGRID',     role: 'People Manager',          commands: ['/1on1-prep'],             color: 'brown',   homeRoom: 'common' as const,      avatar: '/agents/HAGRID_Cyborg.png'      },
-  { name: 'LUNA',       role: 'GFX Director',            commands: ['/gfx', '/motion'],        color: 'teal',    homeRoom: 'lab' as const,         avatar: '/agents/LUNA_Cyborg.png'        },
-  { name: 'GINNY',      role: 'Social Media & Growth',   commands: ['/social', '/reels'],      color: 'crimson', homeRoom: 'creative' as const,    avatar: '/agents/GINNY_Cyborg.png'       },
-  { name: 'NEVILLE',    role: 'QA & Research',           commands: ['/qa', '/research'],       color: 'lime',    homeRoom: 'archive' as const,     avatar: '/agents/NEVILLE_Cyborg.png'     },
-  { name: 'DRACO',      role: "Devil's Advocate",        commands: ['/challenge', '/critique'], color: 'silver', homeRoom: 'common' as const,      avatar: '/agents/DRACO_Cyborg.png'       },
-  { name: 'SIRIUS',     role: 'Brand Strategist',        commands: ['/brand', '/position'],    color: 'indigo',  homeRoom: 'common' as const,      avatar: '/agents/SIRIUS_Cyborg.png'      },
-  { name: 'LUPIN',      role: 'Onboarding & Training',   commands: ['/onboard', '/train'],     color: 'stone',   homeRoom: 'archive' as const,     avatar: '/agents/LUPIN_Cyborg.png'       },
-  { name: 'FRED',       role: 'Viral Content',           commands: ['/viral', '/hooks'],       color: 'coral',   homeRoom: 'creative' as const,    avatar: '/agents/FRED & GEORGE_Cyborg.png'        },
-  { name: 'GEORGE',     role: 'Content Experiments',     commands: ['/experiment', '/ab'],     color: 'tangerine', homeRoom: 'creative' as const,  avatar: '/agents/FRED & GEORGE_Cyborg.png'      },
-  { name: 'FLEUR',      role: 'Brand & Naming',          commands: ['/name', '/copy'],         color: 'sky',     homeRoom: 'creative' as const,    avatar: '/agents/FLEUR_Cyborg.png'       },
-  { name: 'MOODY',      role: 'Audit & Risk',            commands: ['/audit', '/qc'],          color: 'zinc',    homeRoom: 'lab' as const,         avatar: '/agents/MOODY_Cyborg.png'       },
-  { name: 'TRELAWNEY',  role: 'Trends & Forecasting',    commands: ['/trends', '/forecast'],   color: 'violet',  homeRoom: 'lab' as const,         avatar: '/agents/TRELAWNEY_Cyborg.png'   },
-  { name: 'DOBBY',      role: 'Task Automator',          commands: ['/tasks', '/automate'],    color: 'sage',    homeRoom: 'operations' as const,  avatar: '/agents/DOBBY_Cyborg.png'       },
-  { name: 'ARTHUR',     role: 'Legal & Compliance',      commands: ['/legal', '/policy'],      color: 'maroon',  homeRoom: 'archive' as const,     avatar: '/agents/ARTHUR_Cyborg.png'      },
-  { name: 'TONKS',      role: 'Wildcard Agent',          commands: ['/anything', '/flex'],     color: 'pink',    homeRoom: 'common' as const,      avatar: '/agents/TONKS_Cyborg.png'       },
-  { name: 'KINGSLEY',   role: 'Crisis Manager',          commands: ['/crisis', '/escalate'],   color: 'gold',    homeRoom: 'operations' as const,  avatar: '/agents/KINGSLEY_Cyborg.png'        },
+  { name: 'DUMBLEDORE', role: 'Chief of Staff',          commands: ['/brief', '/eod'],         color: 'purple',  homeRoom: 'headmaster'  as const, avatar: '/agents/DUMBLEDORE_Cyborg.png'  },
+  { name: 'HERMIONE',   role: 'Production Controller',   commands: ['/status', '/blockers'],    color: 'amber',   homeRoom: 'library'     as const, avatar: '/agents/HERMIONE_Cyborg.png'    },
+  { name: 'HARRY',      role: 'Creative Review',         commands: ['/review'],                color: 'red',     homeRoom: 'clocktower'  as const, avatar: '/agents/HARRY_Cyborg.png'       },
+  { name: 'RON',        role: 'Strategic Ideation',      commands: ['/brainstorm'],            color: 'orange',  homeRoom: 'clocktower'  as const, avatar: '/agents/RON_Cyborg.png'         },
+  { name: 'McGONAGALL', role: 'SOP Builder',             commands: ['/sop', '/workflow'],      color: 'green',   homeRoom: 'requirement' as const, avatar: '/agents/McGONAGALL_Cyborg.png'  },
+  { name: 'SNAPE',      role: 'AI Scout',                commands: ['/ai-scout', '/mp'],       color: 'slate',   homeRoom: 'lab'         as const, avatar: '/agents/SNAPE_Cyborg.png'       },
+  { name: 'HAGRID',     role: 'People Manager',          commands: ['/1on1-prep'],             color: 'brown',   homeRoom: 'auror'       as const, avatar: '/agents/HAGRID_Cyborg.png'      },
+  { name: 'LUNA',       role: 'GFX Director',            commands: ['/gfx', '/motion'],        color: 'teal',    homeRoom: 'lab'         as const, avatar: '/agents/LUNA_Cyborg.png'        },
+  { name: 'GINNY',      role: 'Social Media & Growth',   commands: ['/social', '/reels'],      color: 'crimson', homeRoom: 'clocktower'  as const, avatar: '/agents/GINNY_Cyborg.png'       },
+  { name: 'NEVILLE',    role: 'QA & Research',           commands: ['/qa', '/research'],       color: 'lime',    homeRoom: 'requirement' as const, avatar: '/agents/NEVILLE_Cyborg.png'     },
+  { name: 'DRACO',      role: "Devil's Advocate",        commands: ['/challenge', '/critique'], color: 'silver', homeRoom: 'broomsticks' as const, avatar: '/agents/DRACO_Cyborg.png'       },
+  { name: 'SIRIUS',     role: 'Brand Strategist',        commands: ['/brand', '/position'],    color: 'indigo',  homeRoom: 'broomsticks' as const, avatar: '/agents/SIRIUS_Cyborg.png'      },
+  { name: 'LUPIN',      role: 'Onboarding & Training',   commands: ['/onboard', '/train'],     color: 'stone',   homeRoom: 'requirement' as const, avatar: '/agents/LUPIN_Cyborg.png'       },
+  { name: 'FRED',       role: 'Viral Content',           commands: ['/viral', '/hooks'],       color: 'coral',   homeRoom: 'clocktower'  as const, avatar: '/agents/FRED & GEORGE_Cyborg.png'   },
+  { name: 'GEORGE',     role: 'Content Experiments',     commands: ['/experiment', '/ab'],     color: 'tangerine', homeRoom: 'clocktower' as const, avatar: '/agents/FRED & GEORGE_Cyborg.png' },
+  { name: 'FLEUR',      role: 'Brand & Naming',          commands: ['/name', '/copy'],         color: 'sky',     homeRoom: 'clocktower'  as const, avatar: '/agents/FLEUR_Cyborg.png'       },
+  { name: 'MOODY',      role: 'Audit & Risk',            commands: ['/audit', '/qc'],          color: 'zinc',    homeRoom: 'lab'         as const, avatar: '/agents/MOODY_Cyborg.png'       },
+  { name: 'TRELAWNEY',  role: 'Trends & Forecasting',    commands: ['/trends', '/forecast'],   color: 'violet',  homeRoom: 'lab'         as const, avatar: '/agents/TRELAWNEY_Cyborg.png'   },
+  { name: 'DOBBY',      role: 'Task Automator',          commands: ['/tasks', '/automate'],    color: 'sage',    homeRoom: 'auror'       as const, avatar: '/agents/DOBBY_Cyborg.png'       },
+  { name: 'ARTHUR',     role: 'Legal & Compliance',      commands: ['/legal', '/policy'],      color: 'maroon',  homeRoom: 'requirement' as const, avatar: '/agents/ARTHUR_Cyborg.png'      },
+  { name: 'TONKS',      role: 'Wildcard Agent',          commands: ['/anything', '/flex'],     color: 'pink',    homeRoom: 'broomsticks' as const, avatar: '/agents/TONKS_Cyborg.png'       },
+  { name: 'KINGSLEY',   role: 'Crisis Manager',          commands: ['/crisis', '/escalate'],   color: 'gold',    homeRoom: 'library'     as const, avatar: '/agents/KINGSLEY_Cyborg.png'    },
 ]
 
 // ─── Colour maps ──────────────────────────────────────────────────────────────
@@ -133,39 +135,52 @@ export const BADGE_MAP: Record<string, string> = {
 
 export const ROOMS: Record<RoomId, RoomConfig> = {
   'headmaster': {
-    label: "Director's Office", sublabel: 'Private', emoji: '🪑',
-    style: { left: '0%', top: '0%', width: '22%', height: '44%' },
-    border: 'border-[#3d2010]', bg: 'bg-[#6b3c1a]/15', textColor: 'text-[#f5c88a]',
+    num: 1, label: "The Headmaster's Tower", sublabel: 'Private', emoji: '🔮',
+    style: { left: '0%', top: '0%', width: '27%', height: '45%' },
+    border: 'border-purple-600/40', bg: 'bg-purple-950/20', textColor: 'text-purple-300',
+    zoomOrigin: '13.5% 22.5%',
   },
   'great-hall': {
-    label: 'Conference Room', sublabel: 'Meeting', emoji: '🏢',
-    style: { left: '22%', top: '0%', width: '42%', height: '44%' },
-    border: 'border-[#1a3a5c]', bg: 'bg-[#1e4060]/20', textColor: 'text-[#7ec8f5]', isMeeting: true,
+    num: 2, label: 'The Great Hall', sublabel: 'Meeting Room', emoji: '🏛️',
+    style: { left: '27%', top: '0%', width: '37%', height: '77%' },
+    border: 'border-blue-500/40', bg: 'bg-blue-950/15', textColor: 'text-blue-300',
+    zoomOrigin: '45.5% 38.5%', isMeeting: true,
+  },
+  'library': {
+    num: 3, label: 'The Library', sublabel: 'Restricted Section', emoji: '📚',
+    style: { left: '0%', top: '45%', width: '27%', height: '32%' },
+    border: 'border-amber-700/40', bg: 'bg-amber-950/15', textColor: 'text-amber-300',
+    zoomOrigin: '13.5% 61%',
   },
   'lab': {
-    label: 'Research Lab', sublabel: 'AI & Tech', emoji: '💻',
-    style: { left: '64%', top: '0%', width: '36%', height: '44%' },
-    border: 'border-[#2a2a40]', bg: 'bg-[#1a1a35]/25', textColor: 'text-[#a0a8d8]',
+    num: 4, label: "Snape's Dungeons", sublabel: 'AI Research', emoji: '⚗️',
+    style: { left: '64%', top: '0%', width: '36%', height: '45%' },
+    border: 'border-slate-500/40', bg: 'bg-slate-900/20', textColor: 'text-slate-300',
+    zoomOrigin: '82% 22.5%',
   },
-  'operations': {
-    label: 'Operations', sublabel: 'Production', emoji: '📋',
-    style: { left: '0%', top: '44%', width: '28%', height: '38%' },
-    border: 'border-[#4a3010]', bg: 'bg-[#7a5020]/15', textColor: 'text-[#f0c060]',
+  'requirement': {
+    num: 5, label: 'The Room of Requirement', sublabel: 'Tools & Resources', emoji: '✨',
+    style: { left: '64%', top: '45%', width: '36%', height: '32%' },
+    border: 'border-fuchsia-600/40', bg: 'bg-fuchsia-950/15', textColor: 'text-fuchsia-300',
+    zoomOrigin: '82% 61%',
   },
-  'creative': {
-    label: 'Creative Studio', sublabel: 'Design', emoji: '🎨',
-    style: { left: '28%', top: '44%', width: '36%', height: '38%' },
-    border: 'border-[#4a2010]', bg: 'bg-[#7a3510]/15', textColor: 'text-[#f0a060]',
+  'auror': {
+    num: 6, label: 'The Auror Office', sublabel: 'Operations', emoji: '🛡️',
+    style: { left: '0%', top: '77%', width: '27%', height: '23%' },
+    border: 'border-green-700/40', bg: 'bg-green-950/15', textColor: 'text-green-300',
+    zoomOrigin: '13.5% 88.5%',
   },
-  'archive': {
-    label: 'Library', sublabel: 'Docs & SOPs', emoji: '📚',
-    style: { left: '64%', top: '44%', width: '36%', height: '38%' },
-    border: 'border-[#1a3a28]', bg: 'bg-[#1a4028]/20', textColor: 'text-[#60d898]',
+  'clocktower': {
+    num: 7, label: 'The Clock Tower', sublabel: 'Creative Studio', emoji: '🕰️',
+    style: { left: '27%', top: '77%', width: '37%', height: '23%' },
+    border: 'border-orange-700/40', bg: 'bg-orange-950/15', textColor: 'text-orange-300',
+    zoomOrigin: '45.5% 88.5%',
   },
-  'common': {
-    label: 'Break Room', sublabel: 'Lounge', emoji: '☕',
-    style: { left: '0%', top: '82%', width: '100%', height: '18%' },
-    border: 'border-[#3a2810]', bg: 'bg-[#5c3818]/15', textColor: 'text-[#d4a060]',
+  'broomsticks': {
+    num: 8, label: 'The Three Broomsticks', sublabel: 'Common Room', emoji: '🍺',
+    style: { left: '64%', top: '77%', width: '36%', height: '23%' },
+    border: 'border-yellow-700/40', bg: 'bg-yellow-950/15', textColor: 'text-yellow-300',
+    zoomOrigin: '82% 88.5%',
   },
 }
 
@@ -206,24 +221,25 @@ export const CHARACTER_MAP: Record<string, ComponentType<{ avatar: string; isWal
 // ─── Position maps (% of floor plan) ─────────────────────────────────────────
 
 export const DESK_POS: Record<string, Pos> = {
-  // Headmaster (0-22%, 0-44%)
-  DUMBLEDORE: { x: 9,  y: 20 },
-  // Lab (64-100%, 0-44%)
-  SNAPE:      { x: 80, y: 14 }, LUNA:       { x: 72, y: 26 },
-  MOODY:      { x: 90, y: 26 }, TRELAWNEY:  { x: 82, y: 38 },
-  // Operations (0-28%, 44-82%)
-  HERMIONE:   { x: 8,  y: 56 }, KINGSLEY:   { x: 20, y: 54 },
-  DOBBY:      { x: 10, y: 72 },
-  // Creative Studio (28-64%, 44-82%)
-  HARRY:      { x: 34, y: 56 }, RON:        { x: 46, y: 56 },
-  GINNY:      { x: 36, y: 68 }, FLEUR:      { x: 54, y: 68 },
-  FRED:       { x: 40, y: 77 }, GEORGE:     { x: 52, y: 77 },
-  // Archive / Library (64-100%, 44-82%)
-  McGONAGALL: { x: 74, y: 56 }, NEVILLE:    { x: 68, y: 68 },
-  LUPIN:      { x: 82, y: 68 }, ARTHUR:      { x: 90, y: 57 },
-  // Common / Break Room (0-100%, 82-100%)
-  HAGRID:     { x: 11, y: 90 }, DRACO:      { x: 28, y: 90 },
-  TONKS:      { x: 50, y: 90 }, SIRIUS:     { x: 70, y: 90 },
+  // Headmaster (0-27%, 0-45%)
+  DUMBLEDORE:  { x: 13, y: 22 },
+  // Lab / Snape's Dungeons (64-100%, 0-45%)
+  SNAPE:       { x: 80, y: 12 }, LUNA:       { x: 72, y: 24 },
+  MOODY:       { x: 90, y: 24 }, TRELAWNEY:  { x: 82, y: 38 },
+  // Library (0-27%, 45-77%)
+  HERMIONE:    { x: 8,  y: 56 }, KINGSLEY:   { x: 20, y: 66 },
+  // Room of Requirement (64-100%, 45-77%)
+  McGONAGALL:  { x: 74, y: 53 }, NEVILLE:    { x: 68, y: 63 },
+  LUPIN:       { x: 82, y: 63 }, ARTHUR:     { x: 90, y: 53 },
+  // Auror Office (0-27%, 77-100%)
+  HAGRID:      { x: 8,  y: 85 }, DOBBY:      { x: 20, y: 85 },
+  // Clock Tower / Creative (27-64%, 77-100%)
+  HARRY:       { x: 33, y: 84 }, RON:        { x: 43, y: 84 },
+  GINNY:       { x: 35, y: 93 }, FLEUR:      { x: 53, y: 84 },
+  FRED:        { x: 45, y: 93 }, GEORGE:     { x: 57, y: 93 },
+  // Three Broomsticks (64-100%, 77-100%)
+  DRACO:       { x: 70, y: 84 }, TONKS:      { x: 80, y: 84 },
+  SIRIUS:      { x: 90, y: 84 },
 }
 export const MEETING_POS: Record<string, Pos> = {
   // Row 1 (y=9)

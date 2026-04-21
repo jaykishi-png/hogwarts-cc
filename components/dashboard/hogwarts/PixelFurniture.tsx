@@ -388,17 +388,33 @@ export function Furniture({ roomId, occupied }: { roomId: RoomId; occupied: bool
     </div>
   )
 
-  if (roomId === 'operations') return (
+  if (roomId === 'library') return (
     <div className="absolute inset-0 pointer-events-none">
-      <PxDesk style={{ position: 'absolute', left: '8%', top: '15%' }} screenColor="#d97706" />
-      <PxChair style={{ position: 'absolute', left: '13%', top: '50%' }} />
-      <PxDesk style={{ position: 'absolute', left: '52%', top: '15%' }} screenColor="#f59e0b" />
+      <PxBookshelf style={{ position: 'absolute', left: '4%', top: '8%' }} rows={2} />
+      <PxDesk style={{ position: 'absolute', left: '52%', top: '15%' }} screenColor="#d97706" />
       <PxChair style={{ position: 'absolute', left: '57%', top: '50%' }} />
       <PxPlant style={{ position: 'absolute', right: '5%', bottom: '8%' }} />
     </div>
   )
 
-  if (roomId === 'creative') return (
+  if (roomId === 'requirement') return (
+    <div className="absolute inset-0 pointer-events-none">
+      <PxBookshelf style={{ position: 'absolute', left: '4%', top: '8%' }} rows={2} />
+      <PxDesk style={{ position: 'absolute', right: '6%', top: '18%' }} screenColor="#10a060" />
+      <PxChair style={{ position: 'absolute', right: '9%', top: '52%' }} />
+      <PxCabinet style={{ position: 'absolute', right: '4%', bottom: '8%' }} />
+    </div>
+  )
+
+  if (roomId === 'auror') return (
+    <div className="absolute inset-0 pointer-events-none">
+      <PxDesk style={{ position: 'absolute', left: '8%', top: '15%' }} screenColor="#d97706" />
+      <PxChair style={{ position: 'absolute', left: '13%', top: '50%' }} />
+      <PxPlant style={{ position: 'absolute', right: '5%', bottom: '8%' }} />
+    </div>
+  )
+
+  if (roomId === 'clocktower') return (
     <div className="absolute inset-0 pointer-events-none">
       <PxDesk style={{ position: 'absolute', left: '8%', top: '15%' }} screenColor="#7c3aed" />
       <PxChair style={{ position: 'absolute', left: '13%', top: '50%' }} />
@@ -408,25 +424,10 @@ export function Furniture({ roomId, occupied }: { roomId: RoomId; occupied: bool
     </div>
   )
 
-  if (roomId === 'archive') return (
+  if (roomId === 'broomsticks') return (
     <div className="absolute inset-0 pointer-events-none">
-      <PxBookshelf style={{ position: 'absolute', left: '4%', top: '8%' }} rows={2} />
-      <PxBookshelf style={{ position: 'absolute', left: '24%', top: '8%' }} rows={2} />
-      <PxDesk style={{ position: 'absolute', right: '6%', top: '18%' }} screenColor="#10a060" />
-      <PxChair style={{ position: 'absolute', right: '9%', top: '52%' }} />
-      <PxCabinet style={{ position: 'absolute', right: '4%', bottom: '8%' }} />
-    </div>
-  )
-
-  if (roomId === 'common') return (
-    <div className="absolute inset-0 pointer-events-none">
-      {/* couch + coffee table */}
       <PxCouch style={{ position: 'absolute', left: '2%', top: '12%' }} tileW={3} />
       <PxCoffeeTable style={{ position: 'absolute', left: '15%', top: '35%' }} />
-      {/* plants flanking kitchen */}
-      <PxPlant style={{ position: 'absolute', left: '27%', top: '5%' }} />
-      <PxPlant style={{ position: 'absolute', left: '58%', top: '5%' }} />
-      {/* kitchen area */}
       <PxCounter style={{ position: 'absolute', right: '4%', top: '12%' }} />
       <PxFridge style={{ position: 'absolute', right: '2%', bottom: '5%' }} />
     </div>

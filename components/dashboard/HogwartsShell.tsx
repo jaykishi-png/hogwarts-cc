@@ -470,6 +470,17 @@ export function HogwartsShell() {
   })
   const floorRef = useRef<HTMLDivElement>(null)
 
+  // ── Room zoom state ──────────────────────────────────────────────────
+  const [zoomedRoom, setZoomedRoom] = useState<RoomId | null>(null)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setZoomedRoom(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+  function toggleZoom(roomId: RoomId) {
+    setZoomedRoom(z => z === roomId ? null : roomId)
+  }
+
   // ── Voice input state ────────────────────────────────────────────────
   const [isListening, setIsListening] = useState(false)
   const voiceInputRef = useRef<VoiceInput | null>(null)
@@ -545,17 +556,20 @@ export function HogwartsShell() {
 
   // ── Office helpers ───────────────────────────────────────────────────────
   function getRoomFromPos(x: number, y: number): RoomId {
-    if (y < 44) {
-      if (x < 22) return 'headmaster'
-      if (x < 64) return 'great-hall'
+    // great-hall spans x 27-64%, y 0-77%
+    if (x >= 27 && x < 64 && y < 77) return 'great-hall'
+    if (y < 45) {
+      if (x < 27) return 'headmaster'
       return 'lab'
     }
-    if (y < 82) {
-      if (x < 28) return 'operations'
-      if (x < 64) return 'creative'
-      return 'archive'
+    if (y < 77) {
+      if (x < 27) return 'library'
+      if (x < 64) return 'great-hall'
+      return 'requirement'
     }
-    return 'common'
+    if (x < 27) return 'auror'
+    if (x < 64) return 'clocktower'
+    return 'broomsticks'
   }
 
   function updateDragPos(name: string, pos: Pos) {
@@ -1707,72 +1721,83 @@ export function HogwartsShell() {
                 }
               }}
               className={`flex-1 min-w-0 relative rounded-xl overflow-hidden border-2 border-[#1a0e06] ${['qc','transcribe','agents','activity','env','layout','settings','chat','knowledge','gfx','product','memory','inbox','collaborate','quick','batch-hooks','calendar','stats','brief-sched','frameio'].includes(activeTool) ? 'hidden' : ''}`}
-              style={{
-                background: '#8b5c30',
-                backgroundImage: [
-                  // wood plank horizontal grain lines (every 16px)
-                  'repeating-linear-gradient(0deg, rgba(0,0,0,0.07) 0px, rgba(0,0,0,0.07) 1px, transparent 1px, transparent 16px)',
-                  // subtle vertical plank separators (every 64px)
-                  'repeating-linear-gradient(90deg, rgba(80,40,5,0.2) 0px, rgba(80,40,5,0.2) 2px, transparent 2px, transparent 64px)',
-                  // faint 32px tile grid overlay
-                  'repeating-linear-gradient(90deg, rgba(0,0,0,0.03) 0px, rgba(0,0,0,0.03) 1px, transparent 1px, transparent 32px)',
-                  'repeating-linear-gradient(0deg, rgba(0,0,0,0.03) 0px, rgba(0,0,0,0.03) 1px, transparent 1px, transparent 32px)',
-                ].join(', '),
-              }}
+              style={{ background: '#0b0d14', cursor: zoomedRoom ? 'zoom-out' : 'default' }}
+              onClick={() => setZoomedRoom(null)}
             >
-              {/* ── Room zones ──────────────────────────────────────────────── */}
-              {(Object.entries(ROOMS) as [RoomId, RoomConfig][]).map(([roomId, room]) => {
-                const occupants = agents.filter(a => a.currentRoom === roomId)
-                const isLive    = roomId === 'great-hall' && occupants.length > 0
-                return (
-                  <div
-                    key={roomId}
-                    className={`absolute border-2 transition-all duration-500 ${room.bg} ${room.border} ${isLive ? 'shadow-xl shadow-blue-400/25' : ''}`}
-                    style={{ ...room.style, margin: 3, width: `calc(${room.style.width} - 6px)`, height: `calc(${room.style.height} - 6px)` }}
-                  >
-                    {/* room label */}
-                    <div className="absolute top-2 left-2 flex items-center gap-1 pointer-events-none z-10"
-                      style={{ background: 'rgba(7,8,14,0.6)', borderRadius: 4, padding: '2px 5px' }}>
-                      <span className="text-[10px] leading-none">{room.emoji}</span>
-                      <div>
-                        <p className={`text-[9px] font-bold tracking-wide ${room.textColor}`}>{room.label}</p>
-                        <p className="text-[7px] text-[#9a8060] uppercase tracking-widest">{room.sublabel}</p>
-                      </div>
-                      {isLive && (
-                        <span className="flex items-center gap-0.5 text-[8px] text-blue-400 bg-blue-900/40 rounded px-1 border border-blue-800/40 ml-1">
-                          <span className="w-1 h-1 bg-blue-400 rounded-full animate-pulse" /> LIVE
+              {/* ── Inner zoomable layer ─────────────────────────────────────── */}
+              <div
+                className="absolute inset-0"
+                style={{
+                  backgroundImage: 'url(/hogwarts-bg_Clean.png)',
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                  transform: zoomedRoom ? 'scale(2.6)' : 'scale(1)',
+                  transformOrigin: zoomedRoom ? ROOMS[zoomedRoom].zoomOrigin : 'center center',
+                  transition: 'transform 0.45s cubic-bezier(0.4,0,0.2,1), transform-origin 0.45s cubic-bezier(0.4,0,0.2,1)',
+                }}
+                onClick={e => e.stopPropagation()}
+              >
+                {/* ── Room zones (transparent overlays) ───────────────────────── */}
+                {(Object.entries(ROOMS) as [RoomId, RoomConfig][]).map(([roomId, room]) => {
+                  const occupants = agents.filter(a => a.currentRoom === roomId)
+                  const isLive    = roomId === 'great-hall' && occupants.length > 0
+                  const isZoomed  = zoomedRoom === roomId
+                  return (
+                    <div
+                      key={roomId}
+                      className={`absolute transition-all duration-300 ${isZoomed ? 'ring-2 ring-white/30' : ''}`}
+                      style={{ ...room.style }}
+                      onClick={e => { e.stopPropagation(); toggleZoom(roomId) }}
+                    >
+                      {/* Room label button */}
+                      <button
+                        className={`absolute top-2 left-2 z-20 flex items-center gap-1.5 rounded-md px-2 py-1
+                          border backdrop-blur-sm transition-all duration-200 cursor-zoom-in
+                          ${isZoomed
+                            ? 'bg-white/20 border-white/40 shadow-lg scale-95'
+                            : 'bg-black/50 border-white/10 hover:bg-black/70 hover:border-white/25'}
+                        `}
+                        onClick={e => { e.stopPropagation(); toggleZoom(roomId) }}
+                      >
+                        <span className={`text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${room.textColor} bg-black/40`}>
+                          {room.num}
                         </span>
-                      )}
+                        <div className="text-left">
+                          <p className={`text-[9px] font-bold leading-tight ${room.textColor} whitespace-nowrap`}>{room.label}</p>
+                          {isLive && (
+                            <span className="flex items-center gap-0.5 text-[7px] text-blue-400">
+                              <span className="w-1 h-1 bg-blue-400 rounded-full animate-pulse" /> LIVE
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                      {/* Furniture overlay */}
+                      <Furniture roomId={roomId} occupied={occupants.length > 0} />
                     </div>
-                    {/* furniture */}
-                    <Furniture roomId={roomId} occupied={occupants.length > 0} />
-                  </div>
-                )
-              })}
+                  )
+                })}
 
-              {/* ── Walls (thick dark dividers) ──────────────────────────────── */}
-              {[
-                { left: '22%', top: '0%',  width: 4, height: '44%' },
-                { left: '64%', top: '0%',  width: 4, height: '44%' },
-                { left: '28%', top: '44%', width: 4, height: '38%' },
-                { left: '64%', top: '44%', width: 4, height: '38%' },
-                { left: '0%',  top: '82%', width: '100%', height: 4 },
-              ].map((d, i) => (
-                <div key={i} className="absolute pointer-events-none"
-                  style={{ ...d, background: '#1a0e06', opacity: 0.9 }} />
-              ))}
+                {/* ── Agent sprites ────────────────────────────────────────────── */}
+                {agents.map(agent => (
+                  <TrackedCharacter
+                    key={agent.name}
+                    agent={agent}
+                    isMoving={moving.has(agent.name)}
+                    onClick={() => handleAgentClick(agent.name)}
+                    highlighted={agent.name === respondingAgent && messages.length > 0}
+                    posOverride={agent.currentRoom !== 'great-hall' ? dragPos[agent.name] : undefined}
+                  />
+                ))}
+              </div>
 
-              {/* ── Agent sprites ────────────────────────────────────────────── */}
-              {agents.map(agent => (
-                <TrackedCharacter
-                  key={agent.name}
-                  agent={agent}
-                  isMoving={moving.has(agent.name)}
-                  onClick={() => handleAgentClick(agent.name)}
-                  highlighted={agent.name === respondingAgent && messages.length > 0}
-                  posOverride={agent.currentRoom !== 'great-hall' ? dragPos[agent.name] : undefined}
-                />
-              ))}
+              {/* ── Zoom-out hint ─────────────────────────────────────────────── */}
+              {zoomedRoom && (
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+                  <span className="text-[9px] text-white/50 bg-black/60 rounded-full px-3 py-1 backdrop-blur-sm">
+                    Press Esc or click background to zoom out
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* ── Right panel (chat) — hidden in full chat view ─────────────── */}
