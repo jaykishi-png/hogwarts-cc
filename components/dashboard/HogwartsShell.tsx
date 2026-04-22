@@ -9,7 +9,7 @@ import {
   Clapperboard, ChevronRight, ExternalLink, RefreshCw, Terminal,
   Cpu, Database, Bell, Palette, SlidersHorizontal, BookOpen,
   CheckCircle2, XCircle, Clock, BarChart2, Paperclip, Link2, X as XIcon, Plus,
-  Wand2, Sparkles, Tag, Trash2, Brain, Mail, Calendar, Film,
+  Wand2, Sparkles, Tag, Trash2, Brain, Mail, Calendar,
   PlayCircle, BookMarked, Fish, Mic, MicOff, Download, BarChart,
 } from 'lucide-react'
 import { NavTabs } from './NavTabs'
@@ -35,7 +35,6 @@ import { ContentCalendarPanel } from './hogwarts/ContentCalendarPanel'
 import { AgentStatsPanel } from './hogwarts/AgentStatsPanel'
 import { ScheduledBriefPanel } from './hogwarts/ScheduledBriefPanel'
 import { YouTubePanel } from './hogwarts/YouTubePanel'
-import { FrameioPanel } from './hogwarts/FrameioPanel'
 import { TranscriptionPanel } from './hogwarts/TranscriptionPanel'
 import { VoiceInput } from '@/lib/voice-input'
 import {
@@ -215,7 +214,6 @@ function LeftToolbar({ active, setActive }: { active: string; setActive: (k: str
     null,
     { key: 'qc',           icon: Clapperboard, label: 'Video QC' },
     { key: 'transcribe',   icon: Mic,          label: 'Transcribe' },
-    { key: 'frameio',      icon: Film,         label: 'Frame.io Reviews' },
     { key: 'gfx',         icon: Sparkles,     label: 'GFX Generator' },
     { key: 'product',     icon: Tag,          label: 'Product Names' },
     null,
@@ -1141,15 +1139,6 @@ export function HogwartsShell() {
               </PanelErrorBoundary>
             )}
 
-            {/* ── Frame.io Panel ────────────────────────────────────────────── */}
-            {activeTool === 'frameio' && (
-              <PanelErrorBoundary panelName="Frame.io Reviews">
-                <div className="flex-1 overflow-hidden flex flex-col h-full">
-                  <FrameioPanel onAction={firePrompt} />
-                </div>
-              </PanelErrorBoundary>
-            )}
-
             {/* ── Full Chat Panel ───────────────────────────────────────────── */}
             {activeTool === 'chat' && (
               <PanelErrorBoundary panelName="Chat">
@@ -1565,7 +1554,6 @@ export function HogwartsShell() {
                     { name: 'Notion',    sub: 'Tasks · EOD database',          icon: BookOpen, color: 'text-gray-300',    status: 'connected', env: 'NOTION_TOKEN' },
                     { name: 'Slack',     sub: 'Bot token · DM delivery',       icon: MessageSquare, color: 'text-purple-400', status: 'connected', env: 'SLACK_BOT_TOKEN' },
                     { name: 'Monday',    sub: 'Project boards · items',        icon: BarChart2,color: 'text-amber-400',   status: 'connected', env: 'MONDAY_API_TOKEN' },
-                    { name: 'Frame.io',  sub: 'Video QC · review links',       icon: Clapperboard, color: 'text-red-400', status: 'connected', env: 'FRAMEIO_TOKEN' },
                     { name: 'Google',    sub: 'Calendar · Gmail',              icon: Globe,    color: 'text-blue-400',    status: 'connected', env: 'GOOGLE_CLIENT_ID' },
                     { name: 'Anthropic', sub: 'Claude API (backup)',           icon: Terminal, color: 'text-orange-400',  status: 'connected', env: 'ANTHROPIC_API_KEY' },
                   ].map(svc => (
@@ -1740,7 +1728,7 @@ export function HogwartsShell() {
                   pushLog(`${agentName} moved to ${ROOMS[newRoom].label}.`, 'move')
                 }
               }}
-              className={`flex-1 min-w-0 relative rounded-xl overflow-hidden border-2 border-[#1a0e06] ${['qc','transcribe','agents','activity','env','layout','settings','chat','knowledge','gfx','product','memory','inbox','collaborate','quick','batch-hooks','calendar','stats','brief-sched','frameio'].includes(activeTool) ? 'hidden' : ''}`}
+              className={`flex-1 min-w-0 relative rounded-xl overflow-hidden border-2 border-[#1a0e06] ${['qc','transcribe','agents','activity','env','layout','settings','chat','knowledge','gfx','product','memory','inbox','collaborate','quick','batch-hooks','calendar','stats','brief-sched'].includes(activeTool) ? 'hidden' : ''}`}
               style={{ background: '#0b0d14', cursor: zoomedRoom ? 'zoom-out' : 'default' }}
               onClick={() => setZoomedRoom(null)}
             >
@@ -2079,7 +2067,7 @@ export function HogwartsShell() {
                             className="rounded-xl object-cover object-top opacity-40" />
                           <p className="text-xs text-gray-600 leading-relaxed">
                             Ask a question or type <span className="text-purple-500 font-mono">/brief</span> for the team briefing.<br />
-                            Paste a Frame.io link with <span className="text-red-400 font-mono">/qc</span> for video QC.<br />
+                            Paste a video link with <span className="text-red-400 font-mono">/qc</span> for video QC.<br />
                             Type <span className="text-amber-400 font-mono">/rr</span> to open the Revenue Rush knowledge base.
                           </p>
                         </div>
