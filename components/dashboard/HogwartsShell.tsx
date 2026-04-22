@@ -438,6 +438,7 @@ export function HogwartsShell() {
   const [chatError, setChatError]             = useState('')
   const [activeAgent, setActiveAgent]         = useState<string | null>(null)
   const [responseId, setResponseId]           = useState(0)
+  const [agentFilter, setAgentFilter]         = useState<string | null>(null) // Feature 5: per-agent history filter
   const [attachments, setAttachments]         = useState<{dataUrl: string; name: string; type: string}[]>([])
   const attachInputRef = useRef<HTMLInputElement>(null)
   const textareaRef    = useRef<HTMLTextAreaElement>(null)
@@ -480,6 +481,15 @@ export function HogwartsShell() {
   function toggleZoom(roomId: RoomId) {
     setZoomedRoom(z => z === roomId ? null : roomId)
   }
+  // Feature 1: auto-mention the primary resident when zooming into a room
+  useEffect(() => {
+    if (!zoomedRoom || zoomedRoom === 'great-hall') return
+    const primary = AGENTS_DEF.find(a => a.homeRoom === zoomedRoom)
+    if (!primary) return
+    setQuestion(`@${primary.name.toLowerCase()} `)
+    setActiveAgent(primary.name)
+    setTimeout(() => { const el = document.getElementById('hw-input'); if (el) (el as HTMLTextAreaElement).focus() }, 150)
+  }, [zoomedRoom])
 
   // ── Voice input state ────────────────────────────────────────────────
   const [isListening, setIsListening] = useState(false)
@@ -627,6 +637,16 @@ export function HogwartsShell() {
     setAgents(p => p.map(a => workers.includes(a.name) ? { ...a, status: 'working' } : a))
     pushLog('HERMIONE, HARRY and SNAPE are working on tasks.', 'status')
     setTimeout(() => setAgents(p => p.map(a => a.status === 'working' ? { ...a, status: 'online' } : a)), 6000)
+  }
+  // Feature 3: manually cycle an agent's status by clicking their status dot
+  function cycleStatus(name: string) {
+    setAgents(p => p.map(a => {
+      if (a.name !== name) return a
+      const order: AgentStatus[] = ['online', 'working', 'away']
+      const next = order[(order.indexOf(a.status) + 1) % order.length]
+      pushLog(`${name} status → ${next}.`, 'status')
+      return { ...a, status: next }
+    }))
   }
 
   // ── /brief — sequential multi-agent briefing ──────────────────────────────
@@ -1785,6 +1805,32 @@ export function HogwartsShell() {
                 ))}
               </div>
 
+              {/* ── Feature 4: Quick-fire commands (visible when zoomed into a room) ── */}
+              {zoomedRoom && zoomedRoom !== 'great-hall' && (() => {
+                const cmds = AGENTS_DEF
+                  .filter(a => a.homeRoom === zoomedRoom)
+                  .flatMap(a => a.commands.slice(0, 2).map(cmd => ({ agent: a.name, cmd, color: a.color })))
+                  .slice(0, 8)
+                return cmds.length > 0 ? (
+                  <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 flex-wrap justify-center max-w-[85%]">
+                    {cmds.map(({ agent, cmd, color }) => (
+                      <button
+                        key={`${agent}-${cmd}`}
+                        onClick={() => {
+                          setQuestion(`@${agent.toLowerCase()} ${cmd} `)
+                          setActiveAgent(agent)
+                          setTimeout(() => { const el = document.getElementById('hw-input'); if (el) (el as HTMLTextAreaElement).focus() }, 100)
+                        }}
+                        className={`text-[8px] font-mono px-2 py-1 rounded-full border backdrop-blur-sm transition-all hover:scale-105 active:scale-95 ${BADGE_MAP[color]} border-current/30 bg-black/50`}
+                        title={`${agent}: ${cmd}`}
+                      >
+                        {cmd}
+                      </button>
+                    ))}
+                  </div>
+                ) : null
+              })()}
+
               {/* ── Zoom-out hint ─────────────────────────────────────────────── */}
               {zoomedRoom && (
                 <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
@@ -1848,11 +1894,15 @@ export function HogwartsShell() {
                         <div className="flex items-center gap-1.5 mb-1">
                           <div className="relative flex-shrink-0">
                             <AgentAvatar avatar={agent.avatar} name={agent.name} color={agent.color} size={24} />
-                            <span className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ring-1 ring-[#0d0f1a] ${
-                              live.status === 'online'     ? 'bg-green-400' :
-                              live.status === 'working'    ? 'bg-amber-400 animate-pulse' :
-                              live.status === 'in-meeting' ? 'bg-blue-400' : 'bg-gray-600'
-                            }`} />
+                            <button
+                              onClick={e => { e.stopPropagation(); cycleStatus(agent.name) }}
+                              title={`Status: ${live.status} — click to cycle`}
+                              className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ring-1 ring-[#0d0f1a] transition-transform hover:scale-125 cursor-pointer ${
+                                live.status === 'online'     ? 'bg-green-400' :
+                                live.status === 'working'    ? 'bg-amber-400 animate-pulse' :
+                                live.status === 'in-meeting' ? 'bg-blue-400' : 'bg-gray-600'
+                              }`}
+                            />
                           </div>
                           <p className="text-[9px] font-bold leading-tight truncate">
                             {agent.name === 'McGONAGALL' ? 'McGON.' : agent.name.slice(0, 7)}
@@ -1881,9 +1931,21 @@ export function HogwartsShell() {
 
                 {/* Panel header */}
                 <div className="flex-shrink-0 flex items-center justify-between px-3 py-1.5 border-b border-[#1e2030]">
-                  <span className="text-[9px] font-semibold text-gray-700 uppercase tracking-wider">
-                    {showHistory ? 'History' : briefActive ? 'Team Brief' : currentConvoId ? 'Chat' : 'New Chat'}
-                  </span>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-[9px] font-semibold text-gray-700 uppercase tracking-wider flex-shrink-0">
+                      {showHistory ? 'History' : briefActive ? 'Team Brief' : currentConvoId ? 'Chat' : 'New Chat'}
+                    </span>
+                    {/* Feature 5: agent filter chip */}
+                    {agentFilter && !briefActive && (
+                      <button
+                        onClick={() => setAgentFilter(null)}
+                        className={`flex items-center gap-1 text-[8px] font-bold px-1.5 py-0.5 rounded-full border transition-colors ${BADGE_MAP[AGENTS_DEF.find(a => a.name === agentFilter)?.color ?? 'purple']} border-current/30 hover:opacity-70`}
+                        title="Clear agent filter"
+                      >
+                        {agentFilter} ✕
+                      </button>
+                    )}
+                  </div>
                   {!briefActive && (
                     <div className="flex items-center gap-0.5">
                       <button
@@ -2024,7 +2086,13 @@ export function HogwartsShell() {
                       )}
 
                       {/* Message thread */}
-                      {messages.map(msg => (
+                      {(agentFilter
+                        ? messages.filter((m, i, arr) =>
+                            m.agent === agentFilter ||
+                            (m.role === 'user' && arr[i + 1]?.agent === agentFilter)
+                          )
+                        : messages
+                      ).map(msg => (
                         <div key={msg.id}>
                           {msg.role === 'user' ? (
                             /* User bubble */
@@ -2063,7 +2131,11 @@ export function HogwartsShell() {
                             <div>
                               <div className="flex items-center gap-1.5 mb-1.5">
                                 <AgentAvatar avatar={msg.agentAvatar!} name={msg.agent!} color={msg.agentColor!} size={22} />
-                                <span className={`text-[10px] font-bold uppercase tracking-wide ${TEXT_MAP[msg.agentColor ?? 'purple'] ?? 'text-purple-300'}`}>{msg.agent}</span>
+                                <button
+                                  onClick={() => setAgentFilter(f => f === msg.agent ? null : (msg.agent ?? null))}
+                                  className={`text-[10px] font-bold uppercase tracking-wide ${TEXT_MAP[msg.agentColor ?? 'purple'] ?? 'text-purple-300'} hover:opacity-70 transition-opacity`}
+                                  title={agentFilter === msg.agent ? 'Clear filter' : `Filter to ${msg.agent} only`}
+                                >{msg.agent}</button>
                                 <span className="text-[8px] text-gray-600 ml-auto font-mono">{msg.timestamp}</span>
                                 <button
                                   onClick={() => saveToNotion(msg.id, msg.content, msg.agent ?? 'AGENT')}
@@ -2190,6 +2262,19 @@ export function HogwartsShell() {
                       e.target.value = ''
                     }}
                   />
+                  {/* Feature 2: active room context pill */}
+                  {zoomedRoom && (
+                    <div className="flex items-center gap-1.5 mb-1.5 px-0.5">
+                      <span className="text-[11px]">{ROOMS[zoomedRoom].emoji}</span>
+                      <span className="text-[9px] text-gray-600">in</span>
+                      <span className={`text-[9px] font-semibold ${ROOMS[zoomedRoom].textColor}`}>{ROOMS[zoomedRoom].label}</span>
+                      <button
+                        onClick={() => setZoomedRoom(null)}
+                        className="ml-auto text-[9px] text-gray-700 hover:text-gray-400 transition-colors leading-none"
+                        title="Exit room"
+                      >✕</button>
+                    </div>
+                  )}
                   <div className="relative flex-1">
                     <textarea
                       ref={textareaRef}
