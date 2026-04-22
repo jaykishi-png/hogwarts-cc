@@ -1758,8 +1758,8 @@ export function HogwartsShell() {
                 <button
                   type="button"
                   aria-label="Zoom to the Great Hall"
-                  className="absolute left-1/2 top-[1.1%] z-30 -translate-x-1/2 cursor-zoom-in transition-transform duration-200 hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-amber-400/70 rounded-lg"
-                  style={{ width: '30.5%', maxWidth: 430 }}
+                  className="absolute left-1/2 top-[9.6%] z-30 -translate-x-1/2 cursor-zoom-in transition-transform duration-200 hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-amber-400/70 rounded-lg"
+                  style={{ width: '24%', maxWidth: 340 }}
                   onClick={e => { e.stopPropagation(); toggleZoom('great-hall') }}
                 >
                   <Image
@@ -1780,19 +1780,18 @@ export function HogwartsShell() {
                   return (
                     <div
                       key={roomId}
-                      className="absolute"
+                      className="absolute cursor-zoom-in"
                       style={{ ...room.style }}
-                      onClick={e => { e.stopPropagation(); toggleZoom(roomId) }}
+                      onDoubleClick={e => { e.stopPropagation(); toggleZoom(roomId) }}
                     >
                       {showRoomLabel && (
-                        <button
+                        <div
                           className={`absolute top-2 left-2 z-20 flex items-center gap-1.5 rounded-md px-2 py-1
-                            border backdrop-blur-sm transition-all duration-200 cursor-zoom-in
+                            border backdrop-blur-sm transition-all duration-200 pointer-events-none
                             ${isZoomed
                               ? 'bg-white/20 border-white/40 shadow-lg scale-95'
                               : 'bg-black/50 border-white/10 hover:bg-black/70 hover:border-white/25'}
                           `}
-                          onClick={e => { e.stopPropagation(); toggleZoom(roomId) }}
                         >
                           <span className={`text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${room.textColor} bg-black/40`}>
                             {room.num}
@@ -1805,7 +1804,7 @@ export function HogwartsShell() {
                               </span>
                             )}
                           </div>
-                        </button>
+                        </div>
                       )}
                     </div>
                   )
