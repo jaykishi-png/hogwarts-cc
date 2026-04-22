@@ -35,6 +35,7 @@ import { ContentCalendarPanel } from './hogwarts/ContentCalendarPanel'
 import { AgentStatsPanel } from './hogwarts/AgentStatsPanel'
 import { ScheduledBriefPanel } from './hogwarts/ScheduledBriefPanel'
 import { YouTubePanel } from './hogwarts/YouTubePanel'
+import { EmailDraftPanel } from './hogwarts/EmailDraftPanel'
 import { TranscriptionPanel } from './hogwarts/TranscriptionPanel'
 import { VoiceInput } from '@/lib/voice-input'
 import {
@@ -209,6 +210,7 @@ function LeftToolbar({ active, setActive }: { active: string; setActive: (k: str
     { key: 'collaborate',  icon: Users,        label: 'Collaborate' },
     null,
     { key: 'quick',        icon: Zap,          label: 'Quick Actions' },
+    { key: 'email-draft',  icon: Send,         label: 'Email Drafts' },
     { key: 'batch-hooks',  icon: Fish,         label: 'Batch Hooks' },
     { key: 'calendar',     icon: Calendar,     label: 'Content Calendar' },
     null,
@@ -1094,6 +1096,15 @@ export function HogwartsShell() {
               </PanelErrorBoundary>
             )}
 
+            {/* ── Email Draft Panel ─────────────────────────────────────────── */}
+            {activeTool === 'email-draft' && (
+              <PanelErrorBoundary panelName="Email Drafts">
+                <div className="flex-1 overflow-hidden flex flex-col h-full">
+                  <EmailDraftPanel pushLog={pushLog} />
+                </div>
+              </PanelErrorBoundary>
+            )}
+
             {/* ── Batch Hook Generator Panel ────────────────────────────────── */}
             {activeTool === 'batch-hooks' && (
               <PanelErrorBoundary panelName="Batch Hook Generator">
@@ -1728,7 +1739,7 @@ export function HogwartsShell() {
                   pushLog(`${agentName} moved to ${ROOMS[newRoom].label}.`, 'move')
                 }
               }}
-              className={`flex-1 min-w-0 relative rounded-xl overflow-hidden border-2 border-[#1a0e06] ${['qc','transcribe','agents','activity','env','layout','settings','chat','knowledge','gfx','product','memory','inbox','collaborate','quick','batch-hooks','calendar','stats','brief-sched'].includes(activeTool) ? 'hidden' : ''}`}
+              className={`flex-1 min-w-0 relative rounded-xl overflow-hidden border-2 border-[#1a0e06] ${['qc','transcribe','agents','activity','env','layout','settings','chat','knowledge','gfx','product','memory','inbox','collaborate','quick','email-draft','batch-hooks','calendar','stats','brief-sched'].includes(activeTool) ? 'hidden' : ''}`}
               style={{ background: '#0b0d14', cursor: zoomedRoom ? 'zoom-out' : 'default' }}
               onClick={() => setZoomedRoom(null)}
             >
@@ -1744,10 +1755,28 @@ export function HogwartsShell() {
                 }}
                 onClick={e => e.stopPropagation()}
               >
+                <button
+                  type="button"
+                  aria-label="Zoom to the Great Hall"
+                  className="absolute left-1/2 top-[1.1%] z-30 -translate-x-1/2 cursor-zoom-in transition-transform duration-200 hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-amber-400/70 rounded-lg"
+                  style={{ width: '30.5%', maxWidth: 430 }}
+                  onClick={e => { e.stopPropagation(); toggleZoom('great-hall') }}
+                >
+                  <Image
+                    src="/GreatHall_Banner.png"
+                    alt="Hogwarts AI Command Center banner"
+                    width={860}
+                    height={132}
+                    priority
+                    className="w-full h-auto drop-shadow-[0_8px_22px_rgba(0,0,0,0.55)]"
+                  />
+                </button>
+
                 {/* ── Room zones (transparent overlays — label + click only) ──── */}
                 {(Object.entries(ROOMS) as [RoomId, RoomConfig][]).map(([roomId, room]) => {
                   const isLive   = roomId === 'great-hall' && agents.some(a => a.currentRoom === roomId)
                   const isZoomed = zoomedRoom === roomId
+                  const showRoomLabel = roomId !== 'great-hall'
                   return (
                     <div
                       key={roomId}
@@ -1755,27 +1784,29 @@ export function HogwartsShell() {
                       style={{ ...room.style }}
                       onClick={e => { e.stopPropagation(); toggleZoom(roomId) }}
                     >
-                      <button
-                        className={`absolute top-2 left-2 z-20 flex items-center gap-1.5 rounded-md px-2 py-1
-                          border backdrop-blur-sm transition-all duration-200 cursor-zoom-in
-                          ${isZoomed
-                            ? 'bg-white/20 border-white/40 shadow-lg scale-95'
-                            : 'bg-black/50 border-white/10 hover:bg-black/70 hover:border-white/25'}
-                        `}
-                        onClick={e => { e.stopPropagation(); toggleZoom(roomId) }}
-                      >
-                        <span className={`text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${room.textColor} bg-black/40`}>
-                          {room.num}
-                        </span>
-                        <div className="text-left">
-                          <p className={`text-[9px] font-bold leading-tight ${room.textColor} whitespace-nowrap`}>{room.label}</p>
-                          {isLive && (
-                            <span className="flex items-center gap-0.5 text-[7px] text-blue-400">
-                              <span className="w-1 h-1 bg-blue-400 rounded-full animate-pulse" /> LIVE
-                            </span>
-                          )}
-                        </div>
-                      </button>
+                      {showRoomLabel && (
+                        <button
+                          className={`absolute top-2 left-2 z-20 flex items-center gap-1.5 rounded-md px-2 py-1
+                            border backdrop-blur-sm transition-all duration-200 cursor-zoom-in
+                            ${isZoomed
+                              ? 'bg-white/20 border-white/40 shadow-lg scale-95'
+                              : 'bg-black/50 border-white/10 hover:bg-black/70 hover:border-white/25'}
+                          `}
+                          onClick={e => { e.stopPropagation(); toggleZoom(roomId) }}
+                        >
+                          <span className={`text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${room.textColor} bg-black/40`}>
+                            {room.num}
+                          </span>
+                          <div className="text-left">
+                            <p className={`text-[9px] font-bold leading-tight ${room.textColor} whitespace-nowrap`}>{room.label}</p>
+                            {isLive && (
+                              <span className="flex items-center gap-0.5 text-[7px] text-blue-400">
+                                <span className="w-1 h-1 bg-blue-400 rounded-full animate-pulse" /> LIVE
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      )}
                     </div>
                   )
                 })}
