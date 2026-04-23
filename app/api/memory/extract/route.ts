@@ -3,6 +3,21 @@ import OpenAI from 'openai'
 import { addMemory } from '@/lib/memory'
 import type { MemoryType, MemoryImportance, MemoryEntry } from '@/lib/memory'
 
+// Gemini Flash — cheapest capable model for structured extraction
+function extractionClient(): { client: OpenAI; model: string } {
+  if (process.env.GEMINI_API_KEY) {
+    return {
+      client: new OpenAI({
+        apiKey: process.env.GEMINI_API_KEY,
+        baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+      }),
+      model: 'gemini-2.0-flash',
+    }
+  }
+  if (!process.env.OPENAI_API_KEY) throw new Error('GEMINI_API_KEY or OPENAI_API_KEY required')
+  return { client: new OpenAI({ apiKey: process.env.OPENAI_API_KEY }), model: 'gpt-4o-mini' }
+}
+
 const EXTRACTION_SYSTEM_PROMPT = `You are a memory extraction agent. Given a conversation exchange, extract key facts worth remembering long-term. Focus on:
 - Decisions made (what was decided and why)
 - Tasks completed or assigned
@@ -47,22 +62,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       )
     }
 
-    const apiKey = process.env.OPENAI_API_KEY
-    if (!apiKey) {
-      return NextResponse.json({ extracted: [], error: 'OPENAI_API_KEY not configured' })
-    }
-
-    const openai = new OpenAI({ apiKey })
+    const { client, model } = extractionClient()
 
     const userContent = `Agent: ${agent}
 Question: ${question}
 Answer: ${answer}`
 
-    const completion = await openai.chat.completions.create({
-      model:           'gpt-4o-mini',
-      max_tokens:      500,
-      temperature:     0,
-      response_format: { type: 'json_object' },
+    const completion = await client.chat.completions.create({
+      model,
+      max_tokens:  500,
+      temperature: 0,
       messages: [
         { role: 'system', content: EXTRACTION_SYSTEM_PROMPT },
         { role: 'user',   content: userContent },

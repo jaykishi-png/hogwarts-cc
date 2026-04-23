@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
+import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
 
 export const maxDuration = 30
+
+// Claude Haiku — high-quality writing at lower cost than GPT-4o
+function getClient() {
+  const anthropicKey = process.env.ANTHROPIC_API_KEY
+  if (anthropicKey) return { provider: 'anthropic' as const, key: anthropicKey }
+  const oaKey = process.env.OPENAI_API_KEY
+  if (oaKey) return { provider: 'openai' as const, key: oaKey }
+  throw new Error('ANTHROPIC_API_KEY or OPENAI_API_KEY required')
+}
 
 const SYSTEM = `You are an elite executive communications assistant.
 
@@ -15,7 +25,7 @@ Guidelines:
 - If details are missing, make reasonable wording choices without inventing facts.
 - Avoid filler, hype, cliches, and robotic phrasing.
 
-Return ONLY valid JSON in this exact shape:
+Return ONLY valid JSON in this exact shape (no markdown fences, no preamble):
 {
   "subject": "string",
   "greeting": "string",
@@ -59,12 +69,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'goal and context are required' }, { status: 400 })
     }
 
-    const apiKey = process.env.OPENAI_API_KEY
-    if (!apiKey) {
-      return NextResponse.json({ error: 'OPENAI_API_KEY not configured' }, { status: 503 })
-    }
-
-    const openai = new OpenAI({ apiKey })
+    const { provider, key } = getClient()
     const userMsg = [
       `Intent: ${intent}`,
       `Tone: ${tone}`,
@@ -77,17 +82,31 @@ export async function POST(req: NextRequest) {
       signature ? `Signature to use: ${signature}` : '',
     ].filter(Boolean).join('\n')
 
-    const res = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      temperature: 0.65,
-      max_tokens: 1400,
-      messages: [
-        { role: 'system', content: SYSTEM },
-        { role: 'user', content: userMsg },
-      ],
-    })
+    let rawJson = '{}'
 
-    const rawJson = res.choices[0]?.message?.content ?? '{}'
+    if (provider === 'anthropic') {
+      const anthropic = new Anthropic({ apiKey: key })
+      const msg = await anthropic.messages.create({
+        model: 'claude-3-5-haiku-20241022',
+        max_tokens: 1400,
+        system: SYSTEM,
+        messages: [{ role: 'user', content: userMsg }],
+      })
+      rawJson = msg.content[0]?.type === 'text' ? msg.content[0].text : '{}'
+    } else {
+      const openai = new OpenAI({ apiKey: key })
+      const res = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        temperature: 0.65,
+        max_tokens: 1400,
+        messages: [
+          { role: 'system', content: SYSTEM },
+          { role: 'user', content: userMsg },
+        ],
+      })
+      rawJson = res.choices[0]?.message?.content ?? '{}'
+    }
+
     let draft: unknown
     try {
       const cleaned = rawJson.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()

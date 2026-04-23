@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { getRelevantMemories, formatMemoriesForPrompt } from '@/lib/memory'
+import { resolveModel, getOpenAICompatClient, getAnthropicClient } from '@/lib/ai-clients'
 
 export const maxDuration = 60
 
-const client = () => {
+const openaiClient = () => {
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) throw new Error('OPENAI_API_KEY not configured')
   return new OpenAI({ apiKey })
@@ -21,7 +22,6 @@ async function getCalendarContext(): Promise<string> {
     const refreshToken = process.env.GOOGLE_REFRESH_TOKEN
     if (!refreshToken) return ''
 
-    // Refresh to get access token
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -73,7 +73,6 @@ async function getMondayContext(): Promise<string> {
     const { fetchAssignedItems } = await import('@/lib/integrations/monday')
     const items = await fetchAssignedItems(apiToken)
     if (!items || items.length === 0) return 'No active Monday.com items.'
-    // Find blocked/overdue items first
     const allItems = items as Array<{ name?: string; status?: string; boardName?: string; dueDate?: string; needsReview?: boolean }>
     const blockedFirst = [...allItems].sort((a, b) => {
       const aBlocked = /blocked|stuck|waiting/i.test(a.status ?? '')
@@ -182,9 +181,16 @@ AGENCY CONTEXT (know this at all times):
 - Tech stack: Notion (docs/wikis), Monday.com (task tracking), Slack (comms), Google Drive (assets), Frame.io (video review), Gmail, Google Calendar
 - Output types: YouTube videos, YouTube ads, Reels/TikToks, landing pages, product pages, email sequences, GFX packages`
 
+// model field = alias understood by resolveModel() in lib/ai-clients.ts
+// claude-sonnet  → complex creative & strategy  ($3/$15 per 1M)
+// claude-haiku   → quality creative, cheaper    ($0.80/$4 per 1M)
+// gemini-flash   → structured/operational       ($0.10/$0.40 per 1M)
+// perplexity-sonar → real-time web search       (~$3 + search)
+// gpt-4o         → vision fallback only
+
 const AGENTS: Record<string, { name: string; model: string; system: string; color: string }> = {
   DUMBLEDORE: {
-    name: 'DUMBLEDORE', model: 'gpt-4o', color: 'purple',
+    name: 'DUMBLEDORE', model: 'claude-sonnet', color: 'purple',
     system: `You are DUMBLEDORE, Chief of Staff AI and Master Orchestrator for Jay Kishi's content agency.
 ${AGENCY_CONTEXT}
 
@@ -222,7 +228,7 @@ Answer concisely as Chief of Staff. Prioritize ruthlessly. Think in outcomes.`,
   },
 
   HERMIONE: {
-    name: 'HERMIONE', model: 'gpt-4o-mini', color: 'amber',
+    name: 'HERMIONE', model: 'gemini-flash', color: 'amber',
     system: `You are HERMIONE, Production Controller for Jay Kishi's content agency.
 ${AGENCY_CONTEXT}
 
@@ -245,7 +251,7 @@ Never make up data — if live data isn't available, say so and ask what you nee
   },
 
   HARRY: {
-    name: 'HARRY', model: 'gpt-4o', color: 'red',
+    name: 'HARRY', model: 'claude-haiku', color: 'red',
     system: `You are HARRY, Creative Review Lead for Jay Kishi's content agency.
 ${AGENCY_CONTEXT}
 
@@ -267,7 +273,7 @@ Be direct. Specific beats vague every time. "The lower third at 0:23 covers the 
   },
 
   RON: {
-    name: 'RON', model: 'gpt-4o', color: 'orange',
+    name: 'RON', model: 'claude-sonnet', color: 'orange',
     system: `You are RON, Strategic Ideation Engine for Jay Kishi's content agency.
 ${AGENCY_CONTEXT}
 
@@ -295,7 +301,7 @@ Think in systems, not one-offs. Every idea should be part of a bigger machine.`,
   },
 
   McGONAGALL: {
-    name: 'McGONAGALL', model: 'gpt-4o-mini', color: 'green',
+    name: 'McGONAGALL', model: 'gemini-flash', color: 'green',
     system: `You are McGONAGALL, SOP and Workflow Architect for Jay Kishi's content agency.
 ${AGENCY_CONTEXT}
 
@@ -322,11 +328,11 @@ Be ruthlessly clear. Assume the reader has never done this before.`,
   },
 
   SNAPE: {
-    name: 'SNAPE', model: 'gpt-4o-mini', color: 'slate',
+    name: 'SNAPE', model: 'perplexity-sonar', color: 'slate',
     system: `You are SNAPE, AI Innovation Scout and Prompt Engineer for Jay Kishi's content agency.
 ${AGENCY_CONTEXT}
 
-YOUR JOB: Find and evaluate AI tools that can make Jay's content agency faster, better, or cheaper. Cut through the hype.
+YOUR JOB: Find and evaluate AI tools that can make Jay's content agency faster, better, or cheaper. Cut through the hype. You have real-time web access — use it to surface the latest tools and developments.
 
 WHAT YOU HANDLE:
 - AI tool discovery and evaluation for: video editing, motion graphics, scriptwriting, thumbnail generation, voiceover, research, automation
@@ -346,7 +352,7 @@ For /mp (meta-prompt) requests: rewrite rough prompt ideas into structured, high
   },
 
   HAGRID: {
-    name: 'HAGRID', model: 'gpt-4o-mini', color: 'amber',
+    name: 'HAGRID', model: 'gemini-flash', color: 'amber',
     system: `You are HAGRID, Team and People Manager for Jay Kishi's content agency.
 ${AGENCY_CONTEXT}
 
@@ -372,7 +378,7 @@ Remember: you prep Jay, not the team. Everything you write is for his eyes only.
   },
 
   LUNA: {
-    name: 'LUNA', model: 'gpt-4o', color: 'teal',
+    name: 'LUNA', model: 'claude-haiku', color: 'teal',
     system: `You are LUNA, GFX Director for Jay Kishi's content agency.
 ${AGENCY_CONTEXT}
 
@@ -399,7 +405,7 @@ The Process GFX: minimal, clean lines, premium spacing, monochrome with accent`,
   },
 
   GINNY: {
-    name: 'GINNY', model: 'gpt-4o', color: 'crimson',
+    name: 'GINNY', model: 'claude-haiku', color: 'crimson',
     system: `You are GINNY, Social Media & Growth Strategist for Jay Kishi's content agency.
 ${AGENCY_CONTEXT}
 
@@ -429,7 +435,7 @@ OUTPUT FORMAT for content plans:
   },
 
   NEVILLE: {
-    name: 'NEVILLE', model: 'gpt-4o-mini', color: 'lime',
+    name: 'NEVILLE', model: 'gemini-flash', color: 'lime',
     system: `You are NEVILLE, QA Analyst and Research Lead for Jay Kishi's content agency.
 ${AGENCY_CONTEXT}
 
@@ -452,7 +458,7 @@ For research tasks, output structured summaries with sources. Flag anything that
   },
 
   DRACO: {
-    name: 'DRACO', model: 'gpt-4o', color: 'silver',
+    name: 'DRACO', model: 'claude-sonnet', color: 'silver',
     system: `You are DRACO, Devil's Advocate and Strategic Critic for Jay Kishi's content agency.
 ${AGENCY_CONTEXT}
 
@@ -479,7 +485,7 @@ Be sharp. Be direct. Never be mean — but never be soft either. The goal is a s
   },
 
   SIRIUS: {
-    name: 'SIRIUS', model: 'gpt-4o', color: 'indigo',
+    name: 'SIRIUS', model: 'claude-sonnet', color: 'indigo',
     system: `You are SIRIUS, Brand Strategist for Jay Kishi's content agency.
 ${AGENCY_CONTEXT}
 
@@ -504,7 +510,7 @@ OUTPUT FORMAT for brand audits:
   },
 
   LUPIN: {
-    name: 'LUPIN', model: 'gpt-4o-mini', color: 'stone',
+    name: 'LUPIN', model: 'gemini-flash', color: 'stone',
     system: `You are LUPIN, Onboarding & Training Specialist for Jay Kishi's content agency.
 ${AGENCY_CONTEXT}
 
@@ -529,7 +535,7 @@ Write for someone who is smart but new. Assume zero context.`,
   },
 
   FRED: {
-    name: 'FRED', model: 'gpt-4o', color: 'coral',
+    name: 'FRED', model: 'claude-sonnet', color: 'coral',
     system: `You are FRED, Viral Content Engineer for Jay Kishi's content agency.
 ${AGENCY_CONTEXT}
 
@@ -560,7 +566,7 @@ OUTPUT FORMAT for video concepts:
   },
 
   GEORGE: {
-    name: 'GEORGE', model: 'gpt-4o', color: 'tangerine',
+    name: 'GEORGE', model: 'claude-haiku', color: 'tangerine',
     system: `You are GEORGE, Content Experiments & Growth Scientist for Jay Kishi's content agency.
 ${AGENCY_CONTEXT}
 
@@ -587,7 +593,7 @@ Think like a scientist. One variable at a time. Let data win.`,
   },
 
   FLEUR: {
-    name: 'FLEUR', model: 'gpt-4o', color: 'sky',
+    name: 'FLEUR', model: 'claude-haiku', color: 'sky',
     system: `You are FLEUR, Brand Naming and Copywriter for Jay Kishi's content agency.
 ${AGENCY_CONTEXT}
 
@@ -616,7 +622,7 @@ COPY OUTPUT FORMAT:
   },
 
   MOODY: {
-    name: 'MOODY', model: 'gpt-4o', color: 'zinc',
+    name: 'MOODY', model: 'claude-haiku', color: 'zinc',
     system: `You are MOODY, Content Audit and Risk Officer for Jay Kishi's content agency.
 ${AGENCY_CONTEXT}
 
@@ -646,11 +652,11 @@ Constant vigilance. Trust no one. Check everything.`,
   },
 
   TRELAWNEY: {
-    name: 'TRELAWNEY', model: 'gpt-4o', color: 'violet',
+    name: 'TRELAWNEY', model: 'perplexity-sonar', color: 'violet',
     system: `You are TRELAWNEY, Trends Analyst and Forecaster for Jay Kishi's content agency.
 ${AGENCY_CONTEXT}
 
-YOUR JOB: Give Jay a 3-6 month competitive edge by identifying what's coming before it's obvious.
+YOUR JOB: Give Jay a 3-6 month competitive edge by identifying what's coming before it's obvious. You have real-time web access — use it to surface fresh signals, not stale knowledge.
 
 WHAT YOU HANDLE:
 - Content trend analysis (YouTube, TikTok, Instagram, podcasts) for e-commerce, e-learning, and supplements
@@ -671,7 +677,7 @@ Be specific. "Video essays are growing" is useless. "10-minute educational YouTu
   },
 
   DOBBY: {
-    name: 'DOBBY', model: 'gpt-4o-mini', color: 'sage',
+    name: 'DOBBY', model: 'gemini-flash', color: 'sage',
     system: `You are DOBBY, Task Automation Specialist for Jay Kishi's content agency.
 ${AGENCY_CONTEXT}
 
@@ -700,7 +706,7 @@ Think: what's the one automation that would save the most time this week?`,
   },
 
   ARTHUR: {
-    name: 'ARTHUR', model: 'gpt-4o-mini', color: 'maroon',
+    name: 'ARTHUR', model: 'gemini-flash', color: 'maroon',
     system: `You are ARTHUR, Legal & Compliance Advisor for Jay Kishi's content agency.
 ${AGENCY_CONTEXT}
 
@@ -725,7 +731,7 @@ Always explain the "why" — understanding the rule is as valuable as knowing it
   },
 
   TONKS: {
-    name: 'TONKS', model: 'gpt-4o', color: 'pink',
+    name: 'TONKS', model: 'claude-haiku', color: 'pink',
     system: `You are TONKS, Wildcard Agent for Jay Kishi's content agency.
 ${AGENCY_CONTEXT}
 
@@ -748,7 +754,7 @@ You have no ego about being a generalist. The goal is always the best outcome fo
   },
 
   KINGSLEY: {
-    name: 'KINGSLEY', model: 'gpt-4o', color: 'gold',
+    name: 'KINGSLEY', model: 'claude-haiku', color: 'gold',
     system: `You are KINGSLEY, Crisis Manager for Jay Kishi's content agency.
 ${AGENCY_CONTEXT}
 
@@ -808,10 +814,11 @@ Reply with ONLY the agent name in uppercase. Example: McGONAGALL`
 
 async function routeToAgent(question: string, context?: string): Promise<string> {
   try {
-    const openai = client()
+    // Gemini Flash for routing — cheapest capable classifier
+    const gemini = getOpenAICompatClient('gemini')
     const userMsg = context ? `${context.slice(0, 500)}\n\nNew message: ${question}` : question
-    const res = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+    const res = await gemini.chat.completions.create({
+      model: 'gemini-2.0-flash',
       max_tokens: 10,
       temperature: 0,
       messages: [
@@ -822,7 +829,24 @@ async function routeToAgent(question: string, context?: string): Promise<string>
     const agentName = res.choices[0]?.message?.content?.trim().toUpperCase() ?? 'DUMBLEDORE'
     return AGENTS[agentName] ? agentName : 'DUMBLEDORE'
   } catch {
-    return 'DUMBLEDORE'
+    // Fallback to OpenAI if Gemini key not set
+    try {
+      const openai = openaiClient()
+      const userMsg = context ? `${context.slice(0, 500)}\n\nNew message: ${question}` : question
+      const res = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        max_tokens: 10,
+        temperature: 0,
+        messages: [
+          { role: 'system', content: ROUTER_SYSTEM },
+          { role: 'user', content: userMsg },
+        ],
+      })
+      const agentName = res.choices[0]?.message?.content?.trim().toUpperCase() ?? 'DUMBLEDORE'
+      return AGENTS[agentName] ? agentName : 'DUMBLEDORE'
+    } catch {
+      return 'DUMBLEDORE'
+    }
   }
 }
 
@@ -833,10 +857,81 @@ function parseMention(question: string): { agent: string | null; cleanQuestion: 
   return { agent: AGENTS[mentioned] ? mentioned : null, cleanQuestion: match[2].trim() }
 }
 
+// ─── Streaming helpers ────────────────────────────────────────────────────────
+
+/** Emit a single SSE line */
+function sseChunk(encoder: TextEncoder, payload: Record<string, unknown>): Uint8Array {
+  return encoder.encode(`data: ${JSON.stringify(payload)}\n\n`)
+}
+
+/** Run an Anthropic stream and push deltas into the ReadableStream controller */
+async function streamAnthropic(
+  systemPrompt: string,
+  userContent: string,
+  modelName: string,
+  maxTokens: number,
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  encoder: TextEncoder,
+): Promise<string> {
+  const anthropic = getAnthropicClient()
+  const stream = await anthropic.messages.create({
+    model: modelName,
+    max_tokens: maxTokens,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userContent }],
+    stream: true,
+  })
+  let fullText = ''
+  for await (const event of stream) {
+    if (
+      event.type === 'content_block_delta' &&
+      event.delta.type === 'text_delta'
+    ) {
+      const text = event.delta.text
+      if (text) {
+        fullText += text
+        controller.enqueue(sseChunk(encoder, { type: 'delta', content: text }))
+      }
+    }
+  }
+  return fullText
+}
+
+/** Run an OpenAI-compat stream and push deltas into the ReadableStream controller */
+async function streamOpenAICompat(
+  systemPrompt: string,
+  userContent: string | unknown[],
+  modelName: string,
+  maxTokens: number,
+  provider: 'openai' | 'gemini' | 'perplexity',
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  encoder: TextEncoder,
+): Promise<string> {
+  const oai = getOpenAICompatClient(provider)
+  const streamRes = await oai.chat.completions.create({
+    model: modelName,
+    max_tokens: maxTokens,
+    stream: true,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userContent as string },
+    ],
+  })
+  let fullText = ''
+  for await (const chunk of streamRes) {
+    const delta = chunk.choices[0]?.delta?.content ?? ''
+    if (delta) {
+      fullText += delta
+      controller.enqueue(sseChunk(encoder, { type: 'delta', content: delta }))
+    }
+  }
+  return fullText
+}
+
 // ─── /rr — Revenue Rush Knowledge Base ───────────────────────────────────────
 
 async function handleRRQuery(query: string, useStream: boolean): Promise<Response> {
-  const openai = client()
+  const openai = openaiClient()
   const assistantId = process.env.OPENAI_ASSISTANT_ID ?? 'asst_gaXsZXCTtFzGMd6iVOXzy2PX'
 
   try {
@@ -903,23 +998,16 @@ export async function POST(req: NextRequest) {
   const hasAttachments = attachments && attachments.length > 0
   if (!question && !hasAttachments) return NextResponse.json({ error: 'No question provided' }, { status: 400 })
 
-  try { client() } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 503 })
-  }
-
   // /rr command — route to Revenue Rush KB
   if ((question ?? '').trim().toLowerCase().startsWith('/rr ')) {
     const rrQuery = (question ?? '').trim().slice(4).trim()
     return handleRRQuery(rrQuery, useStream)
   }
 
-  // /mp command — meta-prompt builder
+  // /mp command — meta-prompt builder (Claude Sonnet for best prompt quality)
   if ((question ?? '').trim().toLowerCase().startsWith('/mp ')) {
     const mpQuery = (question ?? '').trim().slice(4).trim()
-    // Force route to SNAPE with meta-prompt system
-    const metaAgent = {
-      name: 'SNAPE', model: 'gpt-4o', color: 'slate',
-      system: `You are a world-class prompt engineer. Given a rough prompt idea, rewrite it as a PERFECT, detailed prompt that will get the best results from an AI. Structure your output as:
+    const mpSystem = `You are a world-class prompt engineer. Given a rough prompt idea, rewrite it as a PERFECT, detailed prompt that will get the best results from an AI. Structure your output as:
 
 **ROLE:** [Who the AI should be]
 **CONTEXT:** [Relevant background]
@@ -928,31 +1016,17 @@ export async function POST(req: NextRequest) {
 **CONSTRAINTS:** [What to avoid or limit]
 **EXAMPLE OUTPUT:** [Optional: a brief example of what a good response looks like]
 
-Be specific, actionable, and thorough. The prompt should be immediately usable.`,
-    }
-    const openai = client()
+Be specific, actionable, and thorough. The prompt should be immediately usable.`
 
     if (useStream) {
-      const streamRes = await openai.chat.completions.create({
-        model: 'gpt-4o',
-        max_tokens: 1500,
-        stream: true,
-        messages: [
-          { role: 'system', content: metaAgent.system },
-          { role: 'user', content: `Turn this rough idea into a perfect prompt:\n\n${mpQuery}` },
-        ],
-      })
       const encoder = new TextEncoder()
       const readable = new ReadableStream({
         async start(controller) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'agent', agent: 'SNAPE', color: 'slate' })}\n\n`))
+          controller.enqueue(sseChunk(encoder, { type: 'agent', agent: 'SNAPE', color: 'slate' }))
           try {
-            for await (const chunk of streamRes) {
-              const delta = chunk.choices[0]?.delta?.content ?? ''
-              if (delta) controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'delta', content: delta })}\n\n`))
-            }
+            await streamAnthropic(mpSystem, `Turn this rough idea into a perfect prompt:\n\n${mpQuery}`, 'claude-3-5-sonnet-20241022', 1500, controller, encoder)
           } finally {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`))
+            controller.enqueue(sseChunk(encoder, { type: 'done' }))
             controller.close()
           }
         },
@@ -960,15 +1034,15 @@ Be specific, actionable, and thorough. The prompt should be immediately usable.`
       return new Response(readable, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' } })
     }
 
-    const res = await openai.chat.completions.create({
-      model: 'gpt-4o',
+    const anthropic = getAnthropicClient()
+    const msg = await anthropic.messages.create({
+      model: 'claude-3-5-sonnet-20241022',
       max_tokens: 1500,
-      messages: [
-        { role: 'system', content: metaAgent.system },
-        { role: 'user', content: `Turn this rough idea into a perfect prompt:\n\n${mpQuery}` },
-      ],
+      system: mpSystem,
+      messages: [{ role: 'user', content: `Turn this rough idea into a perfect prompt:\n\n${mpQuery}` }],
     })
-    return NextResponse.json({ answer: res.choices[0]?.message?.content ?? 'No response', agent: 'SNAPE', color: 'slate' })
+    const answer = msg.content[0]?.type === 'text' ? msg.content[0].text : 'No response'
+    return NextResponse.json({ answer, agent: 'SNAPE', color: 'slate' })
   }
 
   try {
@@ -980,7 +1054,7 @@ Be specific, actionable, and thorough. The prompt should be immediately usable.`
     const images = (attachments ?? []).filter(a => a.type.startsWith('image/'))
     const hasImages = images.length > 0
 
-    const userContent: ContentPart[] = [
+    const userContentParts: ContentPart[] = [
       { type: 'text', text: finalQuestion },
       ...images.map(img => ({
         type: 'image_url' as const,
@@ -988,10 +1062,12 @@ Be specific, actionable, and thorough. The prompt should be immediately usable.`
       })),
     ]
 
+    // Resolve which model to actually use
+    const { provider, modelName } = resolveModel(agent.model, hasImages)
+
     // Agents that benefit from the Revenue Rush knowledge base
     const KB_AGENTS = new Set(['HARRY', 'RON', 'FRED', 'GINNY', 'FLEUR', 'SIRIUS', 'GEORGE', 'LUNA', 'DRACO'])
 
-    // Inject live data for specific agents
     let liveDataContext = ''
     let kbContext = ''
 
@@ -1016,10 +1092,10 @@ Be specific, actionable, and thorough. The prompt should be immediately usable.`
       }
     })()
 
-    // Fetch KB context in parallel for relevant agents
+    // Fetch KB context in parallel for relevant agents (uses OpenAI Assistants — keep as-is)
     const kbFetch = KB_AGENTS.has(agentKey) ? (async () => {
       try {
-        const openai = client()
+        const openai = openaiClient()
         const assistantId = process.env.OPENAI_ASSISTANT_ID ?? 'asst_gaXsZXCTtFzGMd6iVOXzy2PX'
         const thread = await openai.beta.threads.create()
         await openai.beta.threads.messages.create(thread.id, { role: 'user', content: `Summarise anything relevant to: ${finalQuestion.slice(0, 300)}` })
@@ -1045,7 +1121,7 @@ Be specific, actionable, and thorough. The prompt should be immediately usable.`
 
     await Promise.all([liveDataFetch, withTimeout(kbFetch, 8000, undefined)])
 
-    // Build system prompt with optional live data, KB context, memories, and conversation context
+    // Build system prompt
     let systemPrompt = agent.system
     if (memories.length > 0) {
       systemPrompt += `\n\n## Long-Term Memory (what you already know about Jay's work)\n${formatMemoriesForPrompt(memories)}`
@@ -1060,39 +1136,27 @@ Be specific, actionable, and thorough. The prompt should be immediately usable.`
       systemPrompt += `\n\n## Recent conversation context\n${context.slice(0, 3000)}`
     }
 
-    const openai = client()
-    const model = hasImages ? 'gpt-4o' : agent.model
-
-    // Agents that produce long-form documents get a higher token budget
     const LONG_FORM_AGENTS = new Set(['McGONAGALL', 'RON', 'FRED', 'LUPIN', 'SIRIUS', 'DOBBY', 'HERMIONE', 'GEORGE', 'KINGSLEY'])
     const maxTokens = LONG_FORM_AGENTS.has(agentKey) ? 4000 : 2000
 
+    // ── Streaming response ─────────────────────────────────────────────────────
     if (useStream) {
-      const streamRes = await openai.chat.completions.create({
-        model,
-        max_tokens: maxTokens,
-        stream: true,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: hasImages ? userContent : finalQuestion },
-        ],
-      })
-
       const encoder = new TextEncoder()
       const readable = new ReadableStream({
         async start(controller) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'agent', agent: agent.name, color: agent.color })}\n\n`))
+          controller.enqueue(sseChunk(encoder, { type: 'agent', agent: agent.name, color: agent.color }))
           let fullResponse = ''
           try {
-            for await (const chunk of streamRes) {
-              const delta = chunk.choices[0]?.delta?.content ?? ''
-              if (delta) {
-                fullResponse += delta
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'delta', content: delta })}\n\n`))
-              }
+            if (provider === 'anthropic') {
+              // Claude — images not supported in this path (resolveModel forces gpt-4o when hasImages)
+              fullResponse = await streamAnthropic(systemPrompt, finalQuestion, modelName, maxTokens, controller, encoder)
+            } else {
+              // OpenAI / Gemini / Perplexity — all OpenAI-compatible
+              const userPayload = hasImages ? userContentParts : finalQuestion
+              fullResponse = await streamOpenAICompat(systemPrompt, userPayload, modelName, maxTokens, provider, controller, encoder)
             }
           } finally {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`))
+            controller.enqueue(sseChunk(encoder, { type: 'done' }))
             controller.close()
             // Fire-and-forget memory extraction
             if (fullResponse && finalQuestion) {
@@ -1105,7 +1169,7 @@ Be specific, actionable, and thorough. The prompt should be immediately usable.`
                   agent: agentKey,
                   conversationId: context ? 'ongoing' : 'new',
                 }),
-              }).catch(() => { /* silent — never block the response */ })
+              }).catch(() => { /* silent */ })
             }
           }
         },
@@ -1115,16 +1179,31 @@ Be specific, actionable, and thorough. The prompt should be immediately usable.`
       })
     }
 
-    // Non-streaming (used by /brief)
-    const res = await openai.chat.completions.create({
-      model,
-      max_tokens: maxTokens,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: hasImages ? userContent : finalQuestion },
-      ],
-    })
-    const answer = res.choices[0]?.message?.content ?? 'No response'
+    // ── Non-streaming response ─────────────────────────────────────────────────
+    let answer = ''
+
+    if (provider === 'anthropic') {
+      const anthropic = getAnthropicClient()
+      const msg = await anthropic.messages.create({
+        model: modelName,
+        max_tokens: maxTokens,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: finalQuestion }],
+      })
+      answer = msg.content[0]?.type === 'text' ? msg.content[0].text : ''
+    } else {
+      const oai = getOpenAICompatClient(provider)
+      const res = await oai.chat.completions.create({
+        model: modelName,
+        max_tokens: maxTokens,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: hasImages ? (userContentParts as unknown as string) : finalQuestion },
+        ],
+      })
+      answer = res.choices[0]?.message?.content ?? 'No response'
+    }
+
     // Fire-and-forget memory extraction
     if (answer && finalQuestion) {
       fetch(`${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/api/memory/extract`, {
@@ -1138,6 +1217,7 @@ Be specific, actionable, and thorough. The prompt should be immediately usable.`
         }),
       }).catch(() => { /* silent */ })
     }
+
     return NextResponse.json({ answer, agent: agent.name, color: agent.color })
 
   } catch (err) {
