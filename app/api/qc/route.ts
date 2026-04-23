@@ -91,7 +91,6 @@ function parseFrameioUrl(url: string): { type: 'review' | 'asset'; id: string } 
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Decode HTML entities that appear in OG-scraped URLs (e.g. &amp; → &) */
 function decodeHtmlEntities(str: string): string {
   return str
     .replace(/&amp;/g, '&')
@@ -103,14 +102,19 @@ function decodeHtmlEntities(str: string): string {
 
 function formatDuration(s: number) {
   if (!s) return 'unknown'
-  return `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, '0')}`
-}
-function formatFilesize(b: number) {
-  if (!b) return 'unknown'
-  return b > 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${(b / 1e6).toFixed(1)} MB`
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const sec = Math.floor(s % 60)
+  return h > 0
+    ? `${h}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`
+    : `${m}:${sec.toString().padStart(2, '0')}`
 }
 
-/** Convert fractional seconds → SMPTE timecode HH:MM:SS:FF */
+function formatFilesize(b: number) {
+  if (!b) return 'unknown'
+  return b > 1e9 ? `${(b / 1e9).toFixed(2)} GB` : `${(b / 1e6).toFixed(1)} MB`
+}
+
 function secondsToTimecode(secs: number, fps: number = 24): string {
   const totalFrames = Math.round(secs * fps)
   const ff = totalFrames % fps
@@ -121,11 +125,22 @@ function secondsToTimecode(secs: number, fps: number = 24): string {
   return [hh, mm, ss, ff].map(n => n.toString().padStart(2, '0')).join(':')
 }
 
-/** Try to fetch a specific video frame from Frame.io at a given timestamp (seconds).
- *  Returns the URL string or null on failure. */
+/** Map Frame.io label to a human-readable approval status */
+function formatLabel(label: unknown): string {
+  const map: Record<string, string> = {
+    none:           'No label',
+    approved:       '✅ Approved',
+    needs_changes:  '⚠️ Needs changes',
+    in_progress:    '🔄 In progress',
+    rejected:       '❌ Rejected',
+  }
+  return (label && typeof label === 'string' && map[label]) ? map[label] : String(label ?? 'none')
+}
+
+/** Try to fetch a specific video frame from Frame.io at a given timestamp (seconds). */
 async function fetchFrameAtTime(assetId: string, seconds: number): Promise<string | null> {
   try {
-    const data = await frameioGet(`/assets/${assetId}/index?timestamp=${seconds}&type=frame`)
+    const data = await frameioGet(`/assets/${assetId}/index?timestamp=${Math.round(seconds)}&type=frame`)
     const url = data?.frames?.[0]?.url ?? data?.url ?? data?.thumb ?? null
     return typeof url === 'string' ? url : null
   } catch {
@@ -133,54 +148,54 @@ async function fetchFrameAtTime(assetId: string, seconds: number): Promise<strin
   }
 }
 
-/** Collect up to `count` frames spread across the video at known timecodes.
- *  Falls back to the static thumbnails already pulled from the asset. */
+/** Collect up to `count` frames spread across the video — smarter sampling:
+ *  Opening (5%), three early-to-mid, two mid-to-late, closing (95%). */
 async function collectFramesWithTimecodes(
   assetId: string | null,
   duration: number,
   fps: number,
   fallbackUrls: string[],
+  count = 8,
 ): Promise<Array<{ url: string; seconds: number; tc: string }>> {
   const frames: Array<{ url: string; seconds: number; tc: string }> = []
 
   if (assetId && duration > 0) {
-    // Sample at ~10%, 30%, 55%, 75% to spread across the video
-    const positions = [0.1, 0.3, 0.55, 0.75]
-    for (const pos of positions) {
-      const seconds = Math.max(1, Math.round(duration * pos))
-      const url = await fetchFrameAtTime(assetId, seconds)
-      if (url && !frames.find(f => f.url === url)) {
-        frames.push({ url, seconds, tc: secondsToTimecode(seconds, fps) })
-      }
-      if (frames.length >= 4) break
+    // Positions: opening, early, early-mid, mid, mid-late, late, near-end, closing
+    const positions = [0.05, 0.15, 0.28, 0.42, 0.57, 0.70, 0.83, 0.95].slice(0, count)
+    // Fetch in parallel for speed
+    const results = await Promise.all(
+      positions.map(async pos => {
+        const seconds = Math.max(1, Math.round(duration * pos))
+        const url = await fetchFrameAtTime(assetId, seconds)
+        return url ? { url, seconds, tc: secondsToTimecode(seconds, fps) } : null
+      })
+    )
+    for (const r of results) {
+      if (r && !frames.find(f => f.url === r.url)) frames.push(r)
+      if (frames.length >= count) break
     }
   }
 
-  // Fill remaining slots from fallback thumbnails (estimate timecodes)
-  // Frame.io static thumbs are usually generated around the 25% mark
+  // Fill remaining slots from static thumbnails
   for (const url of fallbackUrls) {
     if (frames.find(f => f.url === url)) continue
     const estimatedSec = duration > 0 ? Math.round(duration * 0.25) : 0
-    frames.push({ url, seconds: estimatedSec, tc: duration > 0 ? `~${secondsToTimecode(estimatedSec, fps)}` : '??:??:??:??' })
-    if (frames.length >= 4) break
+    frames.push({
+      url,
+      seconds: estimatedSec,
+      tc: duration > 0 ? `~${secondsToTimecode(estimatedSec, fps)}` : '??:??:??:??',
+    })
+    if (frames.length >= count) break
   }
 
   return frames
 }
 
-/** Parse Frame.io transcript into timestamped lines if the structure supports it.
- *  Frame.io transcription objects can be:
- *   - a plain string
- *   - an array of { start_time, end_time, text } segments (seconds as floats)
- *   - an object with a `data` array of similar segments
- */
+/** Parse Frame.io transcript into timestamped lines. */
 function parseTranscript(raw: unknown, fps: number): { text: string; hasTimecodes: boolean } {
   if (!raw) return { text: '', hasTimecodes: false }
-
-  // Already a plain string
   if (typeof raw === 'string') return { text: raw, hasTimecodes: false }
 
-  // Segment array
   interface Segment { start_time?: number; start?: number; timestamp?: number; end_time?: number; text?: string; transcript?: string }
   const segments: Segment[] = Array.isArray(raw)
     ? raw as Segment[]
@@ -188,9 +203,7 @@ function parseTranscript(raw: unknown, fps: number): { text: string; hasTimecode
       ? ((raw as Record<string, unknown>).data as Segment[])
       : []
 
-  if (segments.length === 0) {
-    return { text: JSON.stringify(raw).slice(0, 4000), hasTimecodes: false }
-  }
+  if (segments.length === 0) return { text: JSON.stringify(raw).slice(0, 6000), hasTimecodes: false }
 
   const lines = segments.map(seg => {
     const start = seg.start_time ?? seg.start ?? seg.timestamp ?? 0
@@ -208,10 +221,10 @@ export async function POST(req: NextRequest) {
   try {
     const { url, postComment = false } = await req.json()
 
-    // ── 1. Resolve URL (follow f.io redirects) ─────────────────────────────
+    // ── 1. Resolve URL ────────────────────────────────────────────────────────
     const resolvedUrl = await resolveUrl(url)
 
-    // ── 2. Try Frame.io v2 API first; fall back to OG scraping ────────────
+    // ── 2. Frame.io API — fetch asset metadata ────────────────────────────────
     let thumbUrl:    string | null = null
     let assetName:   string        = 'Video'
     let transcript:  unknown       = null
@@ -227,13 +240,12 @@ export async function POST(req: NextRequest) {
 
     if (parsed) {
       try {
-        // Attempt v2 API resolution
         let resolvedAssetId = parsed.id
         if (parsed.type === 'review') {
           try {
             const review = await frameioGet(`/review_links/${parsed.id}`)
             resolvedAssetId = review.assets?.[0]?.id ?? review.asset_id ?? parsed.id
-          } catch { /* fall through to direct asset lookup */ }
+          } catch { /* fall through */ }
         }
 
         asset     = await frameioGet(`/assets/${resolvedAssetId}`)
@@ -245,42 +257,55 @@ export async function POST(req: NextRequest) {
         assetDuration = (asset?.duration as number) ?? 0
         assetFps = parseFloat(String(asset?.fps ?? asset?.framerate ?? '24')) || 24
 
-        const meta = {
-          name:       assetName,
-          duration:   formatDuration(assetDuration),
-          fps:        (asset?.fps ?? asset?.framerate ?? 'unknown') as string,
-          resolution: asset?.original
-            ? `${(asset.original as Record<string, unknown>).width} × ${(asset.original as Record<string, unknown>).height}`
-            : asset?.dimensions
-              ? `${(asset.dimensions as Record<string, unknown>).width} × ${(asset.dimensions as Record<string, unknown>).height}`
-              : 'unknown',
-          filesize:  formatFilesize(asset?.filesize as number),
-          uploadedAt: asset?.uploaded_at ? new Date(asset.uploaded_at as string).toLocaleDateString() : 'unknown',
-        }
-        metaBlock = [
-          `- **File:** ${meta.name}`,
-          `- **Duration:** ${meta.duration}`,
-          `- **Resolution:** ${meta.resolution}`,
-          `- **FPS:** ${meta.fps}`,
-          `- **File size:** ${meta.filesize}`,
-          `- **Upload date:** ${meta.uploadedAt}`,
-        ].join('\n')
+        // ── Rich metadata extraction ──────────────────────────────────────
+        const original = asset?.original as Record<string, unknown> | undefined
+        const dims     = asset?.dimensions as Record<string, unknown> | undefined
+        const resolution = original
+          ? `${original.width} × ${original.height}`
+          : dims
+            ? `${dims.width} × ${dims.height}`
+            : 'unknown'
+        const videoCodec  = original?.video_codec as string | undefined
+        const audioCodec  = original?.audio_codec as string | undefined
+        const videoBitrate = original?.video_bitrate as number | undefined
+        const audioBitrate = original?.audio_bitrate as number | undefined
+        const versionNum  = asset?.version_number as number | undefined
+        const label       = asset?.label
+        const description = asset?.description as string | undefined
 
-        // Pull existing comments
+        metaBlock = [
+          `- **File:** ${assetName}`,
+          `- **Duration:** ${formatDuration(assetDuration)}`,
+          `- **Resolution:** ${resolution}`,
+          `- **FPS:** ${assetFps}`,
+          `- **File size:** ${formatFilesize(asset?.filesize as number)}`,
+          videoCodec  ? `- **Video codec:** ${videoCodec}${videoBitrate ? ` @ ${(videoBitrate / 1e6).toFixed(1)} Mbps` : ''}` : '',
+          audioCodec  ? `- **Audio codec:** ${audioCodec}${audioBitrate ? ` @ ${Math.round(audioBitrate / 1000)} kbps` : ''}` : '',
+          versionNum  ? `- **Version:** v${versionNum}` : '',
+          `- **Approval status:** ${formatLabel(label)}`,
+          `- **Upload date:** ${asset?.uploaded_at ? new Date(asset.uploaded_at as string).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'unknown'}`,
+          description ? `- **Description:** ${description}` : '',
+        ].filter(Boolean).join('\n')
+
+        // Pull existing review comments
         try {
           const cd = await frameioGet(`/assets/${assetId}/comments`)
-          existingComments = (cd ?? []).slice(0, 20).map(
-            (c: { text?: string; author?: { name?: string }; timestamp?: number }) =>
-              `[${c.author?.name ?? 'Reviewer'} @ ${c.timestamp != null ? formatDuration(c.timestamp) : '?'}s]: ${c.text ?? ''}`
+          existingComments = (cd ?? []).slice(0, 30).map(
+            (c: { text?: string; author?: { name?: string }; timestamp?: number; completed?: boolean }) => {
+              const who  = c.author?.name ?? 'Reviewer'
+              const when = c.timestamp != null ? `@ ${secondsToTimecode(c.timestamp, assetFps)}` : ''
+              const done = c.completed ? ' ✔' : ''
+              return `[${who} ${when}${done}]: ${c.text ?? ''}`
+            }
           )
         } catch { /* not fatal */ }
 
       } catch {
-        // API failed — fall through to OG scraping below
+        // API failed — fall through to OG scraping
       }
     }
 
-    // ── 3. OG scrape fallback (no API token required) ──────────────────────
+    // ── 3. OG scrape fallback ─────────────────────────────────────────────────
     if (!usedApi) {
       try {
         const og  = await scrapeOgMeta(resolvedUrl)
@@ -289,10 +314,10 @@ export async function POST(req: NextRequest) {
         metaBlock = [
           `- **File:** ${og.title}`,
           `- **Source:** ${resolvedUrl}`,
-          `- **Duration / FPS / filesize:** _not available (public share link — no API access)_`,
+          `- **Duration / FPS / filesize:** _not available (public share — no API access)_`,
           og.description ? `- **Description:** ${og.description}` : '',
         ].filter(Boolean).join('\n')
-      } catch (scrapeErr) {
+      } catch {
         return NextResponse.json(
           { error: `Could not access this Frame.io link via API or public page.\n\nResolved URL: ${resolvedUrl}\n\nMake sure the link is publicly shared, or paste the direct app.frame.io asset URL.` },
           { status: 400 }
@@ -300,14 +325,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── 4. Visual QC — multi-frame analysis ──────────────────────────────────
+    // ── 4. Collect frames ─────────────────────────────────────────────────────
     if (thumbUrl) thumbUrl = decodeHtmlEntities(thumbUrl)
 
-    // Build fallback URL list from static thumbnails
     const fallbackUrls: string[] = []
     if (thumbUrl) fallbackUrls.push(thumbUrl)
     if (usedApi && asset) {
-      for (const key of ['image_full', 'image_128', 'thumb_256', 'thumb_720']) {
+      for (const key of ['image_full', 'thumb_720', 'thumb_256', 'image_128']) {
         const u = asset[key]
         if (typeof u === 'string' && u) {
           const decoded = decodeHtmlEntities(u)
@@ -316,48 +340,65 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Collect frames with known timecodes (tries API frame extraction, falls back to thumbnails)
-    const timedFrames = await collectFramesWithTimecodes(assetId, assetDuration, assetFps, fallbackUrls)
+    // Up to 8 frames: API extraction runs in parallel now
+    const timedFrames = await collectFramesWithTimecodes(assetId, assetDuration, assetFps, fallbackUrls, 8)
     const frameUrls = timedFrames.map(f => f.url)
 
-    let visualSection = '_No thumbnail available for visual analysis._'
+    // ── 5. Visual QC — multi-frame analysis ──────────────────────────────────
+    let visualSection = '_No frames available for visual analysis._'
     if (timedFrames.length > 0) {
       type VisionPart =
         | { type: 'text'; text: string }
         | { type: 'image_url'; image_url: { url: string; detail: 'high' } }
 
-      // Build frame labels with their timecodes
       const frameLabels = timedFrames
-        .map((f, i) => `Frame ${i + 1}: timecode ${f.tc}`)
+        .map((f, i) => `Frame ${i + 1}: [TC: ${f.tc}]`)
         .join('\n')
 
       const parts: VisionPart[] = [
         {
           type: 'text',
-          text: `You are a senior video editor and quality control specialist. Analyze the ${timedFrames.length} frame(s) provided from a production video.
+          text: `You are a senior video editor and quality control specialist reviewing production content for YouTube/social delivery. You have been given ${timedFrames.length} frame(s) sampled across the full video timeline.
 
-Frame timecodes (use these exactly when reporting issues):
+Frame timecodes (reference exactly when flagging issues):
 ${frameLabels}
 
-For each frame (label them Frame 1, Frame 2, etc.):
+**TIMECODE RULE:** Every ISSUE ⚠️ MUST begin with its exact frame timecode: ⚠️ [TC: HH:MM:SS:FF]. No issue without a timecode.
 
-**CRITICAL TIMECODE RULE:** Every single ISSUE ⚠️ you report MUST begin with its timecode in the format [TC: HH:MM:SS:FF] using the timecode of the frame where the issue appears. No issue may be reported without a timecode.
+Evaluate every frame individually, then compare across frames. Respond per check below:
 
-**1. JUMP CUT DETECTION** — Compare consecutive frames for true jump cuts ONLY. A jump cut is an abrupt edit between two shots of the same subject from nearly the same camera angle, creating a jarring "jump" in time. Do NOT flag intentional transitions (cuts to a different scene, cutaway shots, b-roll, cross-cuts, dissolves, wipes, or any edit where the camera angle or subject clearly changes). Only flag as a jump cut if ALL of these apply: (a) same subject appears in both frames, (b) the camera angle is nearly identical (less than ~30° of difference — the "30-degree rule"), (c) the framing/frame size is similar (less than ~30% change — the "30% rule"), AND (d) the edit creates a jarring, unintentional visual stutter. Also flag: lighting changes that are inconsistent within the same shot, subject appearance changes mid-scene (different outfit/hair between what should be the same continuous take).
+---
 
-**2. ON-SCREEN TEXT** — Typos, wrong fonts, misalignment, readability issues, text too close to frame edge (safe zones). Be precise about what text is visible.
+**1. JUMP CUTS & EDIT CONSISTENCY**
+Flag only true jump cuts: same subject, nearly identical angle (< 30° difference), similar framing (< 30% size change), jarring result. Do NOT flag intentional cuts to new scenes, b-roll, cutaways, or clearly different angles. Also flag: subject appearance changes mid-continuous take, lighting inconsistency within a single scene.
 
-**3. EXPOSURE & LIGHTING** — Overexposed highlights, crushed blacks, inconsistent lighting between frames (suggests different shooting conditions), color temperature mismatch.
+**2. ON-SCREEN TEXT & GRAPHICS**
+Check every visible word for: spelling errors, wrong font/style (should match brand), text misaligned or outside title-safe zone (10% inset from each edge), text too small to read on mobile, lower-thirds that cut off names, wrong job title or company name, outdated calls-to-action.
 
-**4. MISSING GRAPHICS** — Places where a lower-third, title card, or call-out would be expected but is absent (e.g., speaker introduction with no lower-third).
+**3. EXPOSURE & COLOUR**
+Flag: blown-out highlights (pure white clipping), crushed blacks (no detail in shadows), inconsistent white balance between frames that should be the same scene, heavy colour cast (green/magenta skin tones), overuse of vignette or heavy-handed grade. Note which specific frames have issues.
 
-**5. COMPOSITION** — Cut-off subjects, awkward headroom, tilted horizon, subject not in rule-of-thirds.
+**4. MISSING GRAPHICS & LOWER-THIRDS**
+Identify: speaker on screen with no lower-third introduction, title cards or chapter headers that appear incomplete or missing, subscribe/CTA animations referenced in script but not present.
 
-**6. COLOR GRADING** — Unnatural skin tones, color cast, inconsistency across frames.
+**5. COMPOSITION & FRAMING**
+Flag: subject cut off at frame edges, excessive headroom (subject too low), tilted horizon (unless intentional), subject in dead centre vs. rule-of-thirds opportunity, obstructed face or eye-line.
 
-Use: PASS ✅, ISSUE ⚠️ [TC: HH:MM:SS:FF] [specific description], or N/A for each check. Be specific and actionable.`,
+**6. BRAND & CONSISTENCY**
+Check for: thumbnail-style frame usable as a preview image, consistent look/feel across frames, watermarks or third-party logos that need clearing, any frame that looks visually out-of-place for the series.
+
+**7. PACING (VISUAL)**
+Based on the spread of frames: does the visual content feel varied enough? Are there multiple long stretches of the same static shot? Note if the same background/setup appears in most frames (suggests talking-head heavy content with limited b-roll).
+
+---
+Format each check as:
+✅ PASS — [brief note]
+⚠️ [TC: HH:MM:SS:FF] ISSUE — [specific, actionable description]
+N/A — [reason]
+
+Be specific, quote visible text verbatim if relevant. Distinguish which frame number each issue appears in.`,
         },
-        ...timedFrames.slice(0, 4).map((f): VisionPart => ({
+        ...timedFrames.slice(0, 8).map((f): VisionPart => ({
           type: 'image_url',
           image_url: { url: f.url, detail: 'high' },
         })),
@@ -366,70 +407,92 @@ Use: PASS ✅, ISSUE ⚠️ [TC: HH:MM:SS:FF] [specific description], or N/A for
       const visionRes = await openai.chat.completions.create({
         model: 'gpt-4o',
         messages: [{ role: 'user', content: parts }],
-        max_tokens: 900,
+        max_tokens: 2000,
       })
       visualSection = visionRes.choices[0].message.content ?? visualSection
     }
 
-    // ── 5. Audio QC — transcript analysis ────────────────────────────────
-    let audioSection = '_No transcript available._'
+    // ── 6. Audio QC — transcript analysis ────────────────────────────────────
+    let audioSection = '_No transcript available — audio not analysed._'
     if (transcript) {
       const { text: transcriptText, hasTimecodes } = parseTranscript(transcript, assetFps)
 
       const tcNote = hasTimecodes
-        ? 'The transcript includes timecodes in [HH:MM:SS:FF] format at the start of each line. Use the timecode of the relevant line for every issue you flag.'
-        : `The transcript does not include per-line timecodes. Estimate the timecode for each issue based on its approximate position in the transcript relative to the total video duration (${formatDuration(assetDuration)}). Always output a best-estimate timecode [TC: HH:MM:SS:FF] — never omit it.`
+        ? 'The transcript includes per-line timecodes in [HH:MM:SS:FF] format. Use the timecode of the relevant line for every issue.'
+        : `The transcript does not have per-line timecodes. Estimate each issue timecode based on its position in the transcript relative to the total duration (${formatDuration(assetDuration)}). Always output a best-estimate [TC: HH:MM:SS:FF] — never omit it.`
 
       const audioRes = await openai.chat.completions.create({
         model: 'gpt-4o',
         messages: [{
           role: 'user',
-          content: `You are a senior video editor checking audio and dialogue quality. Analyze this transcript carefully.
+          content: `You are a senior video editor reviewing dialogue and audio for a production video. Analyse the transcript below against every check.
 
-**CRITICAL TIMECODE RULE:** Every single ISSUE ⚠️ you report MUST begin with [TC: HH:MM:SS:FF]. ${tcNote} No issue may be reported without a timecode.
+**TIMECODE RULE:** Every ISSUE ⚠️ MUST begin with [TC: HH:MM:SS:FF]. ${tcNote}
 
-**1. DIALOGUE CUT-OFF** — Sentences or words cut off mid-phrase. Look for: words that end abruptly, incomplete thoughts, missing sentence endings. These are editing mistakes where audio was cut too early.
+---
 
-**2. LINES TOO CLOSE** — Two consecutive lines with very short gap (< 0.5s implied by abrupt transitions with no breathing room). Flag if a speaker seems to be talking over themselves or edits feel rushed.
+**1. DIALOGUE CUT-OFFS**
+Words or sentences cut off mid-phrase — audio trimmed too early. Look for: abrupt endings, incomplete thoughts, missing sentence conclusions.
 
-**3. FILLER WORDS** — Flag if um/uh/like/you know appear more than 5 times total (possible editing oversight). Report the first occurrence timecode.
+**2. RUSHED PACING / LINES TOO CLOSE**
+Two lines with no breathing room between them (< 0.5s gap implied). Flag if a speaker seems to double up or the edit sounds breathless.
 
-**4. REPEATED CONTENT** — Exact or near-exact sentences appearing twice (edit loop / duplicate clip).
+**3. FILLER WORDS**
+Count um/uh/like/you know/sort of. Flag if total > 5 occurrences — suggest tightening. Report the first occurrence timecode and total count.
 
-**5. INAUDIBLE MARKERS** — [inaudible], [crosstalk], [music], [silence] markers that indicate audio problems.
+**4. REPEATED CONTENT**
+Exact or near-exact sentences appearing more than once — indicates a looped clip or duplicate edit. Quote both instances.
 
-**6. CONTENT ERRORS** — Wrong names, garbled numbers, obvious factual slips.
+**5. INAUDIBLE / PROBLEM MARKERS**
+[inaudible], [crosstalk], [music], [silence], [laughter] markers that suggest audio issues needing attention.
 
-For each: PASS ✅, ISSUE ⚠️ [TC: HH:MM:SS:FF] [quote the problematic line], or N/A.
+**6. CONTENT ACCURACY**
+Wrong names, garbled figures, contradictory statements, outdated product names or URLs mentioned on-screen.
+
+**7. SPEAKER ENERGY & CLARITY**
+Based on word choice and sentence structure: does the speaker sound confident and engaged? Note if language is very filler-heavy, disjointed, or trails off repeatedly (energy issue vs. editing issue).
+
+**8. CALL TO ACTION**
+Is there a clear verbal CTA (subscribe, link in bio, check out X)? If missing entirely, flag it. If present, confirm the timecode it appears.
+
+---
+Format each check as:
+✅ PASS — [brief note]
+⚠️ [TC: HH:MM:SS:FF] ISSUE — [quote the problematic line or describe the problem]
+N/A — [reason]
 
 Transcript:
-${transcriptText.slice(0, 4000)}`,
+${transcriptText.slice(0, 6000)}`,
         }],
-        max_tokens: 800,
+        max_tokens: 1500,
       })
       audioSection = audioRes.choices[0].message.content ?? audioSection
     }
 
-    // ── 6. HARRY synthesises the report ───────────────────────────────────
+    // ── 7. HARRY synthesises the final report ─────────────────────────────────
     const commentsBlock = existingComments.length
-      ? `\n## Existing Review Comments\n${existingComments.join('\n')}`
+      ? `\n## Existing Frame.io Review Comments (${existingComments.length})\n${existingComments.join('\n')}`
       : ''
+
+    const confidenceNote = usedApi
+      ? `Full API access — metadata, ${timedFrames.length} extracted frames${transcript ? ', transcript' : ''}, and ${existingComments.length} review comment(s) analysed.`
+      : `Public link only — limited to thumbnail frame(s). For full technical metadata and transcript, use an API-accessible link.`
 
     const reportRes = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
         {
           role: 'system',
-          content: `You are HARRY, a creative review agent and senior video editor. You write clear, professional, actionable QC reports in markdown.`,
+          content: `You are HARRY, creative review agent and senior video editor at a content production company. You write clear, precise, brutally actionable QC reports in markdown. You do not pad or hedge — every issue gets a timecode and a specific fix. Every pass gets a confident confirmation. No vague language.`,
         },
         {
           role: 'user',
-          content: `Write a QC report for "${assetName}".
+          content: `Write a complete QC report for the video "${assetName}".
 
 ## Technical Metadata
 ${metaBlock}
 
-## Visual Analysis (thumbnail frame)
+## Visual Analysis (${timedFrames.length} frames sampled)
 ${visualSection}
 
 ## Audio / Transcript Analysis
@@ -437,52 +500,75 @@ ${audioSection}
 ${commentsBlock}
 
 ---
-Use this exact structure:
+Use EXACTLY this structure. Do not add extra sections or reorder them:
 
 # QC Report — [video name]
 
 **Overall verdict:** ✅ PASS / ⚠️ REVIEW NEEDED / ❌ FAIL
 **Reviewed by:** HARRY (Creative Review)
+**Data confidence:** [one sentence on what data was available — full API / thumbnail only / transcript available or not]
 
 ---
 
 ## Technical
-[1–3 sentences. Flag wrong resolution, fps, or filesize for delivery.]
+Confirm or flag: resolution (1080p or 4K for YouTube; 1080×1920 for vertical), FPS (24/25/30), file size (flag if > 8 GB or suspiciously small), codec (H.264/H.265 acceptable), approval status from Frame.io label. 2–4 sentences max.
 
 ## Visual
-[Summarise vision findings. Every ⚠️ issue MUST start with its timecode: ⚠️ [TC: HH:MM:SS:FF] description]
+List every ⚠️ issue found. Each MUST start with ⚠️ [TC: HH:MM:SS:FF]. Group by type (text, exposure, composition, etc.). If no issues: single ✅ PASS sentence.
 
 ## Audio
-[Summarise audio findings. Every ⚠️ issue MUST start with its timecode: ⚠️ [TC: HH:MM:SS:FF] description]
+List every ⚠️ issue found. Each MUST start with ⚠️ [TC: HH:MM:SS:FF]. If no transcript was available, note it clearly. If no issues: single ✅ PASS sentence.
+
+## Reviewer Comments
+Summarise any existing Frame.io review comments that are still open (not marked completed). If none: "No open reviewer comments."
+
+## Delivery Checklist
+Rate each item ✅ / ⚠️ / ❌ / N/A:
+- [ ] Resolution matches delivery spec
+- [ ] Frame rate correct
+- [ ] Audio levels acceptable
+- [ ] Lower-thirds / text error-free
+- [ ] CTA present and correct
+- [ ] No jump cuts or edit glitches
+- [ ] Colour grade consistent
+- [ ] Approved in Frame.io
 
 ## Recommended Actions
-- [TC: HH:MM:SS:FF] — [Specific fix. Every action item MUST include the timecode of the problem it addresses. If no issues: "No actions required — file is ready for delivery."]
-
-**TIMECODE RULE:** Every ⚠️ issue and every Recommended Action bullet point MUST include [TC: HH:MM:SS:FF]. Preserve the exact timecodes from the visual and audio analysis above — do not invent or omit them.
+Numbered list. Every item MUST include [TC: HH:MM:SS:FF] for the exact problem location and a specific fix instruction. If nothing to fix: "✅ No actions required — cleared for delivery."
 
 ---
-*Note: Visual analysis based on ${timedFrames.length} frame(s) at timecodes: ${timedFrames.map(f => f.tc).join(', ')}.${timedFrames.length < 2 ? ' For full consistency checks, use frame-by-frame review.' : ' Multi-frame consistency has been evaluated.'}*`,
+*Frames sampled at: ${timedFrames.map(f => f.tc).join(' · ')} | ${confidenceNote}*
+
+**HARD RULES:** Every ⚠️ and every action item must have [TC: HH:MM:SS:FF]. Use timecodes from the analyses above verbatim — do not invent them. Do not truncate the Recommended Actions list.`,
         },
       ],
-      max_tokens: 900,
+      max_tokens: 1800,
     })
 
     const report = reportRes.choices[0].message.content ?? '(no report generated)'
 
-    // ── 7. Optionally post back to Frame.io as a comment ──────────────────
+    // ── 8. Optionally post QC summary back to Frame.io as a comment ──────────
     if (postComment && assetId) {
       try {
-        const summary = report.slice(0, 300).replace(/[#*`]/g, '').trim()
-        await frameioPost(`/assets/${assetId}/comments`, {
-          text: `🤖 QC Report (HARRY)\n\n${summary}\n\n[Full report via Hogwarts dashboard]`,
-        })
+        const verdict = report.match(/\*\*Overall verdict:\*\*\s*(.+)/)?.[1]?.trim() ?? ''
+        const actions = report.match(/## Recommended Actions\n([\s\S]+?)(?:\n---|\n\*|$)/)?.[1]?.trim() ?? ''
+        const commentText = [
+          `🤖 QC Report — HARRY (Creative Review)`,
+          verdict ? `Verdict: ${verdict}` : '',
+          '',
+          actions ? `Actions:\n${actions.slice(0, 500)}` : '',
+          '',
+          '[Full report via Hogwarts AI Command Center]',
+        ].filter(s => s !== undefined).join('\n').trim()
+
+        await frameioPost(`/assets/${assetId}/comments`, { text: commentText })
       } catch { /* non-fatal */ }
     }
 
     return NextResponse.json({
-      answer:    report,
-      agent:     'HARRY',
-      color:     'red',
+      answer:         report,
+      agent:          'HARRY',
+      color:          'red',
       assetName,
       assetId,
       framesAnalyzed: frameUrls.length,
