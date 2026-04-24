@@ -10,6 +10,8 @@ type Count = 10 | 20 | 30
 interface Hook {
   text: string
   format: string
+  angle?: string
+  focus?: string
 }
 
 const ALL_FORMATS: Format[] = [
@@ -27,6 +29,7 @@ export function BatchHookPanel({ pushLog }: { pushLog?: (msg: string) => void })
   const [error, setError] = useState('')
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const [copiedAll, setCopiedAll] = useState(false)
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null)
 
   function toggleFormat(f: Format) {
     setFormats(prev =>
@@ -54,6 +57,7 @@ export function BatchHookPanel({ pushLog }: { pushLog?: (msg: string) => void })
     setLoading(true)
     setError('')
     setResults([])
+    setExpandedIdx(null)
     pushLog?.(`Batch Hook Generator: generating ${count} hooks for ${brand}…`)
 
     try {
@@ -88,7 +92,7 @@ export function BatchHookPanel({ pushLog }: { pushLog?: (msg: string) => void })
       {/* Header */}
       <div className="flex-shrink-0">
         <p className="text-sm font-semibold text-gray-200">🎣 Batch Hook Generator</p>
-        <p className="text-[11px] text-gray-600 mt-0.5">Generate hooks at scale for your brands</p>
+        <p className="text-[11px] text-gray-600 mt-0.5">High-converting hooks at scale — with angle & focus breakdown</p>
       </div>
 
       {/* Form */}
@@ -215,7 +219,9 @@ export function BatchHookPanel({ pushLog }: { pushLog?: (msg: string) => void })
                         hook={h}
                         index={results.indexOf(h)}
                         copiedIdx={copiedIdx}
+                        expandedIdx={expandedIdx}
                         onCopy={copyHook}
+                        onToggle={setExpandedIdx}
                       />
                     ))}
                   </div>
@@ -226,7 +232,9 @@ export function BatchHookPanel({ pushLog }: { pushLog?: (msg: string) => void })
                     hook={h}
                     index={i}
                     copiedIdx={copiedIdx}
+                    expandedIdx={expandedIdx}
                     onCopy={copyHook}
+                    onToggle={setExpandedIdx}
                   />
                 ))
             }
@@ -239,7 +247,7 @@ export function BatchHookPanel({ pushLog }: { pushLog?: (msg: string) => void })
           <div className="text-center py-12">
             <p className="text-2xl mb-2">🎣</p>
             <p className="text-sm text-gray-600">Enter a topic and generate hooks</p>
-            <p className="text-[11px] text-gray-700 mt-1">Mix formats for variety</p>
+            <p className="text-[11px] text-gray-700 mt-1">Click any hook to see its angle & focus</p>
           </div>
         </div>
       )}
@@ -251,26 +259,78 @@ function HookRow({
   hook,
   index,
   copiedIdx,
+  expandedIdx,
   onCopy,
+  onToggle,
 }: {
   hook: Hook
   index: number
   copiedIdx: number | null
+  expandedIdx: number | null
   onCopy: (text: string, idx: number) => void
+  onToggle: (idx: number | null) => void
 }) {
+  const isExpanded = expandedIdx === index
+  const hasInsights = hook.angle || hook.focus
+
   return (
-    <div className="flex items-start gap-2 rounded-lg border border-[#1e2030] bg-[#0a0c14] hover:border-[#2a2d3a] transition-all px-3 py-2.5 group">
-      <span className="flex-shrink-0 text-[11px] text-gray-700 w-5 text-right pt-0.5">{index + 1}.</span>
-      <p className="flex-1 text-[12px] text-gray-300 leading-relaxed">{hook.text}</p>
-      <button
-        onClick={() => onCopy(hook.text, index)}
-        title="Copy hook"
-        className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-gray-700 hover:text-gray-300 hover:bg-[#1e2030] transition-all opacity-0 group-hover:opacity-100"
-      >
-        {copiedIdx === index
-          ? <CheckCircle2 size={12} className="text-emerald-400" />
-          : <Copy size={12} />}
-      </button>
+    <div
+      className={`rounded-lg border transition-all ${
+        isExpanded
+          ? 'border-purple-800/50 bg-[#0d0f1c]'
+          : 'border-[#1e2030] bg-[#0a0c14] hover:border-[#2a2d3a]'
+      }`}
+    >
+      {/* Main hook row */}
+      <div className="flex items-start gap-2 px-3 py-2.5 group">
+        <span className="flex-shrink-0 text-[11px] text-gray-700 w-5 text-right pt-0.5">{index + 1}.</span>
+        <p
+          className="flex-1 text-[12px] text-gray-300 leading-relaxed cursor-pointer"
+          onClick={() => hasInsights && onToggle(isExpanded ? null : index)}
+        >
+          {hook.text}
+        </p>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {hasInsights && (
+            <button
+              onClick={() => onToggle(isExpanded ? null : index)}
+              title="Toggle angle & focus"
+              className={`w-6 h-6 flex items-center justify-center rounded text-[10px] transition-all opacity-0 group-hover:opacity-100 ${
+                isExpanded ? 'text-purple-400 opacity-100' : 'text-gray-600 hover:text-purple-400'
+              }`}
+            >
+              {isExpanded ? '▲' : '▼'}
+            </button>
+          )}
+          <button
+            onClick={() => onCopy(hook.text, index)}
+            title="Copy hook"
+            className="w-6 h-6 flex items-center justify-center rounded text-gray-700 hover:text-gray-300 hover:bg-[#1e2030] transition-all opacity-0 group-hover:opacity-100"
+          >
+            {copiedIdx === index
+              ? <CheckCircle2 size={12} className="text-emerald-400" />
+              : <Copy size={12} />}
+          </button>
+        </div>
+      </div>
+
+      {/* Expanded angle & focus */}
+      {isExpanded && hasInsights && (
+        <div className="px-3 pb-2.5 pt-0 ml-7 space-y-1.5 border-t border-[#1e2030]">
+          {hook.angle && (
+            <div className="flex gap-2 pt-2">
+              <span className="text-[9px] font-semibold text-purple-500 uppercase tracking-wider w-12 flex-shrink-0 pt-px">Angle</span>
+              <span className="text-[11px] text-purple-300">{hook.angle}</span>
+            </div>
+          )}
+          {hook.focus && (
+            <div className="flex gap-2">
+              <span className="text-[9px] font-semibold text-gray-600 uppercase tracking-wider w-12 flex-shrink-0 pt-px">Focus</span>
+              <span className="text-[11px] text-gray-400 leading-relaxed">{hook.focus}</span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
