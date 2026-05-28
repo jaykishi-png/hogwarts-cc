@@ -139,9 +139,25 @@ interface SavedReview {
   id: string
   employeeName: string
   employeePosition: string
-  step: number
+  step: number      // current position (restored on resume)
+  maxStep: number   // furthest step ever reached (shown in history)
   savedAt: string   // ISO timestamp
   form: FormData
+}
+
+/** Returns true if a step's required fields are filled — independent of current position. */
+function isStepComplete(stepIndex: number, form: FormData): boolean {
+  switch (stepIndex) {
+    case 0: return !!(form.employeeName.trim() && form.supervisorName.trim())
+    case 1: return !!(form.competencyOne.competency && form.competencyOne.examples[0].trim())
+    case 2: return !!(form.competencyTwo.competency && form.competencyTwo.examples[0].trim())
+    case 3: return !!(form.competencyThree.competency && form.competencyThree.examples[0].trim())
+    case 4: return !!(form.competencyFour.competency && form.competencyFour.examples[0].trim())
+    case 5: return !!(form.competencyFive.competency && form.competencyFive.examples[0].trim())
+    case 6: return !!(form.goals.some(g => g.text.trim()) && form.overallScore > 0)
+    case 7: return form.nextGoals.some(g => g.text.trim())
+    default: return false
+  }
 }
 
 const SAVES_KEY = 'manager-perf-review-saves'
@@ -261,7 +277,8 @@ function HistoryPanel({
 
           {saves.map(s => {
             const isCurrent = s.id === currentId
-            const progress = Math.round((s.step / (STEPS.length - 1)) * 100)
+            const displayStep = s.maxStep ?? s.step
+            const progress = Math.round((displayStep / (STEPS.length - 1)) * 100)
 
             return (
               <div
@@ -294,7 +311,7 @@ function HistoryPanel({
                     <Clock size={10} className="text-gray-700" />
                     <span className="text-[10px] text-gray-600">{relativeTime(s.savedAt)}</span>
                     <span className="text-gray-700">·</span>
-                    <span className="text-[10px] text-gray-600">{STEPS[s.step]?.label ?? 'Complete'}</span>
+                    <span className="text-[10px] text-gray-600">Up to: {STEPS[displayStep]?.label ?? 'Complete'}</span>
                   </div>
                 </div>
 
@@ -1473,6 +1490,7 @@ function OutputBlock({
 
 export function PerformanceReviewForm() {
   const [step, setStep] = useState(0)
+  const [maxStep, setMaxStep] = useState(0)
   const [form, setForm] = useState<FormData>(defaultForm())
   const [saves, setSaves] = useState<SavedReview[]>([])
   const [showHistory, setShowHistory] = useState(false)
@@ -1488,12 +1506,18 @@ export function PerformanceReviewForm() {
       reviewIdRef.current = latest.id
       setForm(latest.form)
       setStep(latest.step)
+      setMaxStep(latest.maxStep ?? latest.step)
       setSaveStatus('saved')
     } else {
       reviewIdRef.current = crypto.randomUUID()
     }
     setSaves(existing)
   }, [])
+
+  // Keep maxStep as the high-water mark — never goes backward
+  useEffect(() => {
+    setMaxStep(prev => Math.max(prev, step))
+  }, [step])
 
   // Auto-save 1.5s after any form/step change (only once employee name is entered)
   useEffect(() => {
@@ -1505,6 +1529,7 @@ export function PerformanceReviewForm() {
         employeeName: form.employeeName,
         employeePosition: form.employeePosition,
         step,
+        maxStep,
         savedAt: new Date().toISOString(),
         form,
       })
@@ -1512,12 +1537,13 @@ export function PerformanceReviewForm() {
       setSaveStatus('saved')
     }, 1500)
     return () => clearTimeout(timer)
-  }, [form, step])
+  }, [form, step, maxStep])
 
   function handleLoad(save: SavedReview) {
     reviewIdRef.current = save.id
     setForm(save.form)
     setStep(save.step)
+    setMaxStep(save.maxStep ?? save.step)
     setShowHistory(false)
     setSaveStatus('saved')
   }
@@ -1531,6 +1557,7 @@ export function PerformanceReviewForm() {
     reviewIdRef.current = crypto.randomUUID()
     setForm(defaultForm())
     setStep(0)
+    setMaxStep(0)
     setSaveStatus('idle')
   }
 
@@ -1626,23 +1653,23 @@ export function PerformanceReviewForm() {
                 className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all ${
                   i === step
                     ? 'bg-purple-800/60 text-purple-200 border border-purple-700/50'
-                    : i < step
+                    : isStepComplete(i, form)
                     ? 'text-gray-400 hover:text-gray-200 hover:bg-[#1e2030]'
                     : 'text-gray-600 hover:text-gray-300 hover:bg-[#1e2030]'
                 }`}
               >
-                {i < step
+                {i !== step && isStepComplete(i, form)
                   ? <CheckCircle2 size={11} className="text-emerald-500" />
                   : <span className="w-3.5 h-3.5 rounded-full border border-current flex items-center justify-center text-[9px]">{i + 1}</span>}
                 {s.label}
               </button>
             ))}
           </div>
-          {/* Progress bar */}
+          {/* Progress bar — driven by maxStep so it never shrinks when navigating back */}
           <div className="mt-2 h-0.5 bg-[#1e2030] rounded-full overflow-hidden">
             <div
               className="h-full bg-purple-600 rounded-full transition-all duration-500"
-              style={{ width: `${(step / (STEPS.length - 1)) * 100}%` }}
+              style={{ width: `${(maxStep / (STEPS.length - 1)) * 100}%` }}
             />
           </div>
         </div>
