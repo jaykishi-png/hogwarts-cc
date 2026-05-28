@@ -163,6 +163,14 @@ function deleteSave(id: string): void {
   localStorage.setItem(SAVES_KEY, JSON.stringify(getSaves().filter(s => s.id !== id)))
 }
 
+function parseNextPeriodStart(appraisalPeriod: string): string {
+  if (!appraisalPeriod.trim()) return ''
+  // Split on em/en dash or spaced hyphen: "May 2025 – May 2026" → "May 2026"
+  const parts = appraisalPeriod.split(/\s*[–—]\s*|\s*-\s*/)
+  if (parts.length >= 2) return parts[parts.length - 1].trim()
+  return ''
+}
+
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
   const mins = Math.floor(diff / 60000)
@@ -926,38 +934,157 @@ function StepGoals({
 }
 
 function StepNextGoals({ form, update }: { form: FormData; update: (p: Partial<FormData>) => void }) {
+  const [drafting, setDrafting] = useState(false)
+  const [draftError, setDraftError] = useState('')
+
+  const nextPeriodStart = parseNextPeriodStart(form.appraisalPeriod)
+
+  // Auto-fill empty target dates whenever the appraisal period is set
+  useEffect(() => {
+    if (!nextPeriodStart) return
+    const needsUpdate = form.nextGoals.some(g => !g.targetDate)
+    if (!needsUpdate) return
+    update({
+      nextGoals: form.nextGoals.map(g => ({ ...g, targetDate: g.targetDate || nextPeriodStart })),
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nextPeriodStart])
+
   function updateGoal(i: number, patch: Partial<NextGoal>) {
     const g = [...form.nextGoals]
     g[i] = { ...g[i], ...patch }
     update({ nextGoals: g })
   }
 
+  async function handleAIDraft() {
+    setDrafting(true)
+    setDraftError('')
+    try {
+      const payload = {
+        employeeName: form.employeeName,
+        role: form.employeePosition,
+        appraisalPeriod: form.appraisalPeriod,
+        nextPeriodStart,
+        competencies: [
+          { competency: form.competencyOne.competency,   type: 'positive',                examples: form.competencyOne.examples },
+          { competency: form.competencyTwo.competency,   type: 'positive',                examples: form.competencyTwo.examples },
+          { competency: form.competencyThree.competency, type: 'constructive',            examples: form.competencyThree.examples },
+          { competency: form.competencyFour.competency,  type: 'constructive',            examples: form.competencyFour.examples },
+          { competency: form.competencyFive.competency,  type: form.competencyFiveType,   examples: form.competencyFive.examples },
+        ].filter(c => c.competency),
+        goals: form.goals.filter(g => g.text.trim()),
+        overallScore: form.overallScore,
+        overallSummary: form.overallSummary,
+      }
+      const res = await fetch('/api/performance-review/draft-next-goals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json() as { goals?: Array<{ text: string; targetDate: string }>; error?: string }
+      if (data.error) { setDraftError(data.error); return }
+      if (data.goals?.length) {
+        const drafted: NextGoal[] = data.goals.map(g => ({
+          text: g.text ?? '',
+          targetDate: g.targetDate || nextPeriodStart,
+        }))
+        while (drafted.length < 3) drafted.push(emptyNextGoal())
+        update({ nextGoals: drafted.slice(0, 3) })
+      }
+    } catch (err) {
+      setDraftError(String(err))
+    } finally {
+      setDrafting(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-gray-100 mb-1">Next Year&apos;s Goals</h2>
-        <p className="text-[12px] text-gray-500">Define 2–3 SMART goals for the employee to meet in the next review period. Work on these together.</p>
+
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-100 mb-1">Next Year&apos;s Goals</h2>
+          <p className="text-[12px] text-gray-500">
+            Define 2–3 SMART goals for the next review period. Use AI Draft to generate goals directly from this review.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleAIDraft}
+          disabled={drafting}
+          className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-800/80 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-[12px] font-medium transition-colors"
+        >
+          {drafting
+            ? <><Loader2 size={12} className="animate-spin" /> Reviewing…</>
+            : <><Sparkles size={12} /> AI Draft Goals</>}
+        </button>
       </div>
+
+      {draftError && (
+        <div className="flex items-start gap-2 rounded-xl border border-red-800/40 bg-red-900/10 p-3 text-[11px] text-red-300">
+          <span className="flex-shrink-0 mt-px">⚠</span>
+          <span>{draftError}</span>
+        </div>
+      )}
+
+      {/* Context summary shown while drafting */}
+      {drafting && (
+        <div className="rounded-xl border border-purple-800/30 bg-purple-900/10 p-3 space-y-1.5">
+          <p className="text-[11px] text-purple-300 font-medium">Reviewing the full performance evaluation…</p>
+          <p className="text-[10px] text-gray-600">
+            Analysing {[form.competencyOne, form.competencyTwo, form.competencyThree, form.competencyFour, form.competencyFive].filter(c => c.competency).length} competencies
+            · {form.goals.filter(g => g.text.trim()).length} goals
+            · {form.overallScore > 0 ? `${form.overallScore}★ overall` : 'no score yet'}
+          </p>
+        </div>
+      )}
+
+      {/* SMART reminder */}
       <div className="p-3 rounded-xl border border-blue-800/30 bg-blue-900/10">
-        <p className="text-[11px] text-blue-300 font-medium mb-1">SMART Goal Reminder</p>
-        <p className="text-[11px] text-gray-500"><span className="text-gray-400">S</span>pecific · <span className="text-gray-400">M</span>easurable · <span className="text-gray-400">A</span>ttainable · <span className="text-gray-400">R</span>elevant · <span className="text-gray-400">T</span>ime-bound</p>
+        <p className="text-[11px] text-blue-300 font-medium mb-1">SMART Goal Framework</p>
+        <p className="text-[11px] text-gray-500">
+          <span className="text-gray-400">S</span>pecific · <span className="text-gray-400">M</span>easurable · <span className="text-gray-400">A</span>ttainable · <span className="text-gray-400">R</span>elevant · <span className="text-gray-400">T</span>ime-bound
+        </p>
       </div>
+
+      {/* Goal cards */}
       <div className="space-y-4">
         {form.nextGoals.map((goal, i) => (
           <div key={i} className="p-4 rounded-xl border border-[#1e2030] bg-[#0a0c14] space-y-3">
-            <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Goal {i + 1}{i === 0 ? ' *' : ''}</span>
+            <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+              Goal {i + 1}{i === 0 ? ' *' : ''}
+            </span>
             <div>
               <Label>Goal Description</Label>
               <TextArea
                 value={goal.text}
                 onChange={v => updateGoal(i, { text: v })}
-                placeholder={i === 0 ? 'e.g. Improve video turnaround time to under 48 hours for standard projects' : 'Optional'}
+                placeholder={i === 0 ? 'e.g. Improve video turnaround time to under 48 hours for standard projects by Q3' : 'Optional'}
                 rows={3}
               />
             </div>
             <div>
               <Label>Target Completion Date</Label>
-              <Input value={goal.targetDate} onChange={v => updateGoal(i, { targetDate: v })} placeholder="e.g. Q1 2027 or March 2027" />
+              <div className="relative">
+                <Input
+                  value={goal.targetDate}
+                  onChange={v => updateGoal(i, { targetDate: v })}
+                  placeholder={nextPeriodStart || 'e.g. May 2027'}
+                />
+                {nextPeriodStart && !goal.targetDate && (
+                  <button
+                    type="button"
+                    onClick={() => updateGoal(i, { targetDate: nextPeriodStart })}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-purple-500 hover:text-purple-300 transition-colors"
+                  >
+                    Use {nextPeriodStart}
+                  </button>
+                )}
+              </div>
+              {nextPeriodStart && goal.targetDate === nextPeriodStart && (
+                <p className="mt-1 text-[10px] text-gray-600">📅 Auto-set from appraisal period</p>
+              )}
             </div>
           </div>
         ))}
