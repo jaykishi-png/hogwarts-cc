@@ -198,36 +198,26 @@ function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) 
 
 // ─── AI Draft helper ──────────────────────────────────────────────────────────
 
-async function aiDraftExamples(
+async function aiDraftSingleExample(
   competency: string,
   type: 'positive' | 'constructive',
   employeeName: string,
   role: string,
   context: string,
-): Promise<[string, string, string]> {
-  const res = await fetch('/api/agents/ask', {
+  exampleIndex: 0 | 1 | 2,
+): Promise<string> {
+  const res = await fetch('/api/performance-review/draft-example', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      question: `@HAGRID Draft 3 specific, concrete competency examples for a performance review.
-
-Employee: ${employeeName || 'the employee'}
-Role: ${role || 'their role'}
-Competency: ${competency}
-Type: ${type} (${type === 'positive' ? 'highlight a strength' : 'highlight an area for improvement'})
-Context from manager: ${context}
-
-Return EXACTLY 3 numbered examples, each 1-2 sentences, specific and behavioral (not generic). No intro, no outro — just:
-1. [example]
-2. [example]
-3. [example]`,
-      stream: false,
-    }),
+    body: JSON.stringify({ competency, type, employeeName, role, context, exampleIndex }),
   })
-  const data = await res.json() as { answer?: string }
-  const text = data.answer ?? ''
-  const lines = text.split('\n').filter(l => /^\d\./.test(l.trim())).map(l => l.replace(/^\d\.\s*/, '').trim())
-  return [lines[0] ?? '', lines[1] ?? '', lines[2] ?? '']
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { error?: string }
+    throw new Error(err.error ?? `Request failed (${res.status})`)
+  }
+  const data = await res.json() as { example?: string; error?: string }
+  if (data.error) throw new Error(data.error)
+  return data.example ?? ''
 }
 
 // ─── Step components ──────────────────────────────────────────────────────────
@@ -269,6 +259,118 @@ function StepInfo({ form, update }: { form: FormData; update: (p: Partial<FormDa
   )
 }
 
+// ─── Per-example AI row ───────────────────────────────────────────────────────
+
+function ExampleRow({
+  index,
+  value,
+  onChange,
+  competency,
+  effectiveType,
+  employeeName,
+  employeePosition,
+}: {
+  index: 0 | 1 | 2
+  value: string
+  onChange: (v: string) => void
+  competency: string
+  effectiveType: 'positive' | 'constructive'
+  employeeName: string
+  employeePosition: string
+}) {
+  const [showPrompt, setShowPrompt] = useState(false)
+  const [context, setContext] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleDraft() {
+    if (!competency || !context.trim()) return
+    setLoading(true)
+    setError('')
+    try {
+      const example = await aiDraftSingleExample(
+        competency, effectiveType, employeeName, employeePosition, context, index
+      )
+      if (example) {
+        onChange(example)
+        setShowPrompt(false)
+        setContext('')
+      } else {
+        setError('No example returned — try again.')
+      }
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const placeholder = index === 0
+    ? 'e.g. "always delivers edits on time, strong ownership of projects"'
+    : index === 1
+    ? 'e.g. "took lead on the Q4 campaign without being asked"'
+    : 'e.g. "mentored the junior editor on pacing and cuts"'
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-start gap-2">
+        <span className="flex-shrink-0 text-[12px] text-gray-600 pt-2.5 w-4">{index + 1}.</span>
+        <div className="flex-1 space-y-1">
+          <TextArea
+            value={value}
+            onChange={onChange}
+            placeholder={index === 0 ? 'Required — describe a specific observable behavior' : 'Optional'}
+            rows={2}
+          />
+          <div className="flex items-center justify-between">
+            {error && <p className="text-[10px] text-red-400">{error}</p>}
+            <div className="ml-auto">
+              <button
+                onClick={() => { setShowPrompt(v => !v); setError('') }}
+                disabled={!competency}
+                className="flex items-center gap-1 text-[10px] text-purple-500 hover:text-purple-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <Sparkles size={10} />
+                {showPrompt ? 'Cancel' : 'AI Draft'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {showPrompt && (
+        <div className="ml-6 p-3 rounded-xl border border-purple-800/40 bg-purple-900/10 space-y-2">
+          <p className="text-[11px] text-purple-300/80">
+            Describe what happened — Claude will write the example.
+          </p>
+          <textarea
+            value={context}
+            onChange={e => setContext(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleDraft() }}
+            placeholder={placeholder}
+            rows={2}
+            className="w-full bg-[#0a0c14] border border-purple-800/40 rounded-lg px-3 py-2 text-[12px] text-gray-200 placeholder-gray-700 focus:outline-none focus:border-purple-600/60 transition-colors resize-none"
+          />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDraft}
+              disabled={loading || !context.trim()}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-800/80 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[11px] font-medium transition-colors"
+            >
+              {loading
+                ? <><Loader2 size={11} className="animate-spin" /> Drafting…</>
+                : <><Sparkles size={11} /> Draft Example {index + 1}</>}
+            </button>
+            <span className="text-[10px] text-gray-700">⌘↵ to submit</span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Competency step ──────────────────────────────────────────────────────────
+
 function StepCompetency({
   form,
   update,
@@ -285,10 +387,6 @@ function StepCompetency({
   const key = (['competencyOne','competencyTwo','competencyThree','competencyFour','competencyFive'] as const)[index - 1]
   const entry = form[key]
   const effectiveType: 'positive' | 'constructive' = canToggleType ? form.competencyFiveType : (type as 'positive' | 'constructive')
-
-  const [aiLoading, setAiLoading] = useState(false)
-  const [aiContext, setAiContext] = useState('')
-  const [showAiInput, setShowAiInput] = useState(false)
 
   const usedCompetencies = [
     form.competencyOne.competency,
@@ -307,21 +405,7 @@ function StepCompetency({
     updateEntry({ examples: ex })
   }
 
-  async function handleAiDraft() {
-    if (!entry.competency) return
-    setAiLoading(true)
-    try {
-      const examples = await aiDraftExamples(entry.competency, effectiveType, form.employeeName, form.employeePosition, aiContext)
-      updateEntry({ examples })
-      setShowAiInput(false)
-      setAiContext('')
-    } catch { /* silent */ } finally {
-      setAiLoading(false)
-    }
-  }
-
   const selectedDef = COMPETENCIES.find(c => c.name === entry.competency)?.definition
-
   const typeLabel = effectiveType === 'positive' ? 'Positive Strength' : 'Constructive Area'
   const typeBadgeColor = effectiveType === 'positive'
     ? 'border-emerald-700/50 bg-emerald-900/20 text-emerald-400'
@@ -332,7 +416,7 @@ function StepCompetency({
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold text-gray-100 mb-1">Competency {index}</h2>
-          <p className="text-[12px] text-gray-500">Select one competency and provide up to 3 specific examples.</p>
+          <p className="text-[12px] text-gray-500">Select a competency, then add up to 3 behavioral examples. Use ✨ AI Draft on any example for help.</p>
         </div>
         {canToggleType ? (
           <div className="flex gap-1.5 flex-shrink-0">
@@ -361,49 +445,21 @@ function StepCompetency({
         )}
       </div>
 
-      {/* Examples */}
+      {/* Per-example rows */}
       <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <Label>Examples (1–3 specific behavioral examples)</Label>
-          <button
-            onClick={() => setShowAiInput(v => !v)}
-            disabled={!entry.competency}
-            className="flex items-center gap-1 text-[10px] text-purple-400 hover:text-purple-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-          >
-            <Sparkles size={11} /> AI Draft
-          </button>
-        </div>
-
-        {showAiInput && (
-          <div className="mb-3 p-3 rounded-xl border border-purple-800/40 bg-purple-900/10 space-y-2">
-            <p className="text-[11px] text-purple-300">Briefly describe the situation — HAGRID will draft your 3 examples.</p>
-            <TextArea
-              value={aiContext}
-              onChange={setAiContext}
-              placeholder={`e.g. "${effectiveType === 'positive' ? 'always delivers on time, took initiative on the Q4 campaign' : 'misses deadlines, needs more communication with the team'}"`}
-              rows={2}
-            />
-            <button
-              onClick={handleAiDraft}
-              disabled={aiLoading || !aiContext.trim()}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-800/80 hover:bg-purple-700 disabled:opacity-40 text-white text-[12px] font-medium transition-colors"
-            >
-              {aiLoading ? <><Loader2 size={12} className="animate-spin" /> Drafting…</> : <><Sparkles size={12} /> Draft Examples</>}
-            </button>
-          </div>
-        )}
-
-        <div className="space-y-2">
+        <Label>Examples (1–3 specific behavioral examples)</Label>
+        <div className="space-y-3 mt-1">
           {([0, 1, 2] as const).map(i => (
-            <div key={i} className="flex items-start gap-2">
-              <span className="flex-shrink-0 text-[12px] text-gray-600 pt-2.5 w-4">{i + 1}.</span>
-              <TextArea
-                value={entry.examples[i]}
-                onChange={v => updateExample(i, v)}
-                placeholder={i === 0 ? 'Required example' : 'Optional example'}
-                rows={2}
-              />
-            </div>
+            <ExampleRow
+              key={i}
+              index={i}
+              value={entry.examples[i]}
+              onChange={v => updateExample(i, v)}
+              competency={entry.competency}
+              effectiveType={effectiveType}
+              employeeName={form.employeeName}
+              employeePosition={form.employeePosition}
+            />
           ))}
         </div>
       </div>
