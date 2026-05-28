@@ -660,7 +660,83 @@ function StepCompetency({
   )
 }
 
-function StepGoals({ form, update }: { form: FormData; update: (p: Partial<FormData>) => void }) {
+// ─── AI explanation draft (per goal) ─────────────────────────────────────────
+
+function GoalExplanationDraft({
+  goal,
+  employeeName,
+  role,
+  onDraft,
+}: {
+  goal: GoalEntry
+  employeeName: string
+  role: string
+  onDraft: (explanation: string) => void
+}) {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleDraft() {
+    if (!goal.text.trim() || !goal.status || loading) return
+    setLoading(true)
+    setError('')
+    try {
+      const res = await fetch('/api/performance-review/draft-explanation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ goalText: goal.text, status: goal.status, employeeName, role }),
+      })
+      const data = await res.json() as { explanation?: string; error?: string }
+      if (data.error) { setError(data.error); return }
+      if (data.explanation) onDraft(data.explanation)
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const canDraft = !!(goal.text.trim() && goal.status)
+
+  return (
+    <div className="flex items-center justify-between mt-1">
+      {error ? <p className="text-[10px] text-red-400">{error}</p> : <span />}
+      <button
+        type="button"
+        onClick={handleDraft}
+        disabled={!canDraft || loading}
+        title={!canDraft ? 'Enter the goal and select an outcome first' : 'AI-draft this explanation'}
+        className="flex items-center gap-1 text-[10px] text-purple-500 hover:text-purple-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+      >
+        {loading
+          ? <><Loader2 size={10} className="animate-spin" /> Drafting…</>
+          : <><Sparkles size={10} /> AI Draft</>}
+      </button>
+    </div>
+  )
+}
+
+// ─── Goals step ───────────────────────────────────────────────────────────────
+
+function StepGoals({
+  form,
+  update,
+  saves,
+  currentReviewId,
+}: {
+  form: FormData
+  update: (p: Partial<FormData>) => void
+  saves: SavedReview[]
+  currentReviewId: string
+}) {
+  const [showImport, setShowImport] = useState(false)
+  const [importConfirm, setImportConfirm] = useState<SavedReview | null>(null)
+
+  // Previous reviews that have at least one goal with text
+  const importable = saves.filter(
+    s => s.id !== currentReviewId && s.form.nextGoals?.some(g => g.text.trim())
+  )
+
   function updateGoal(i: number, patch: Partial<GoalEntry>) {
     const goals = [...form.goals]
     goals[i] = { ...goals[i], ...patch }
@@ -673,20 +749,104 @@ function StepGoals({ form, update }: { form: FormData; update: (p: Partial<FormD
     if (form.goals.length > 1) update({ goals: form.goals.filter((_, idx) => idx !== i) })
   }
 
+  function doImport(save: SavedReview) {
+    // Pull next-year goals from the chosen review → reset status/explanation for this year
+    const imported: GoalEntry[] = save.form.nextGoals
+      .filter(g => g.text.trim())
+      .map(g => ({ text: g.text.trim(), status: '' as const, explanation: '' }))
+    update({ goals: imported.length ? imported : [emptyGoal()] })
+    setImportConfirm(null)
+    setShowImport(false)
+  }
+
+  const hasCurrentGoals = form.goals.some(g => g.text.trim())
+
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-semibold text-gray-100 mb-1">Goals, Objectives & Accomplishments</h2>
-        <p className="text-[12px] text-gray-500">List up to 5 goals or accomplishments from the review period, and indicate whether each was met.</p>
+        <p className="text-[12px] text-gray-500">
+          Review each goal from this period and mark whether it was successful, unsuccessful, or ongoing.
+        </p>
       </div>
 
+      {/* ── Import from previous review ── */}
+      {importable.length > 0 && (
+        <div className="rounded-xl border border-blue-800/30 bg-blue-900/10 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowImport(v => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 text-left"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-base">📥</span>
+              <div>
+                <p className="text-[12px] font-medium text-blue-300">Import goals from a previous review</p>
+                <p className="text-[10px] text-gray-600 mt-0.5">Pulls last year&apos;s goals so you just mark each outcome</p>
+              </div>
+            </div>
+            <span className="text-[10px] text-gray-600">{showImport ? '▲' : '▼'}</span>
+          </button>
+
+          {showImport && (
+            <div className="border-t border-blue-800/30 px-4 pb-4 space-y-2 pt-3">
+              {importConfirm ? (
+                <div className="rounded-lg border border-amber-700/40 bg-amber-900/10 p-3 space-y-2">
+                  <p className="text-[12px] text-amber-300">
+                    Replace current goals with goals from <strong>{importConfirm.employeeName}</strong>
+                    {importConfirm.form.appraisalPeriod ? ` (${importConfirm.form.appraisalPeriod})` : ''}?
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => doImport(importConfirm)}
+                      className="flex-1 py-1.5 rounded-lg bg-amber-800/60 hover:bg-amber-700/60 text-amber-200 text-[11px] font-medium transition-colors"
+                    >
+                      Yes, import
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setImportConfirm(null)}
+                      className="px-3 py-1.5 rounded-lg border border-[#2a2d3a] text-[11px] text-gray-500 hover:text-gray-300 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                importable.map(s => {
+                  const goalCount = s.form.nextGoals.filter(g => g.text.trim()).length
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => hasCurrentGoals ? setImportConfirm(s) : doImport(s)}
+                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border border-[#1e2030] bg-[#0d0f1a] hover:border-blue-700/50 hover:bg-blue-900/10 transition-all text-left"
+                    >
+                      <div>
+                        <p className="text-[12px] font-medium text-gray-200">{s.employeeName}</p>
+                        <p className="text-[10px] text-gray-600 mt-0.5">
+                          {s.form.appraisalPeriod || 'No period set'} · {goalCount} goal{goalCount !== 1 ? 's' : ''}
+                        </p>
+                      </div>
+                      <span className="text-[10px] text-blue-400 font-medium">Import →</span>
+                    </button>
+                  )
+                })
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Goal cards ── */}
       <div className="space-y-4">
         {form.goals.map((goal, i) => (
           <div key={i} className="p-4 rounded-xl border border-[#1e2030] bg-[#0a0c14] space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">#{i + 1}</span>
               {form.goals.length > 1 && (
-                <button onClick={() => removeGoal(i)} className="text-[10px] text-gray-700 hover:text-red-400 transition-colors">Remove</button>
+                <button type="button" onClick={() => removeGoal(i)} className="text-[10px] text-gray-700 hover:text-red-400 transition-colors">Remove</button>
               )}
             </div>
             <div>
@@ -695,7 +855,7 @@ function StepGoals({ form, update }: { form: FormData; update: (p: Partial<FormD
             </div>
             <div className="grid grid-cols-3 gap-2">
               {(['successful', 'unsuccessful', 'ongoing'] as const).map(s => (
-                <button key={s} onClick={() => updateGoal(i, { status: s })}
+                <button type="button" key={s} onClick={() => updateGoal(i, { status: s })}
                   className={`py-2 rounded-lg border text-[11px] font-medium transition-all capitalize ${
                     goal.status === s
                       ? s === 'successful' ? 'border-emerald-700/50 bg-emerald-900/20 text-emerald-400'
@@ -708,14 +868,20 @@ function StepGoals({ form, update }: { form: FormData; update: (p: Partial<FormD
               ))}
             </div>
             <div>
-              <Label>Explanation (why successful / unsuccessful)</Label>
+              <Label>Explanation (why successful / unsuccessful / ongoing)</Label>
               <TextArea value={goal.explanation} onChange={v => updateGoal(i, { explanation: v })} placeholder="Provide context on the outcome…" rows={2} />
+              <GoalExplanationDraft
+                goal={goal}
+                employeeName={form.employeeName}
+                role={form.employeePosition}
+                onDraft={explanation => updateGoal(i, { explanation })}
+              />
             </div>
           </div>
         ))}
 
         {form.goals.length < 5 && (
-          <button onClick={addGoal} className="w-full py-2 rounded-xl border border-dashed border-[#2a2d3a] text-[12px] text-gray-600 hover:text-gray-400 hover:border-[#3a3d4a] transition-colors">
+          <button type="button" onClick={addGoal} className="w-full py-2 rounded-xl border border-dashed border-[#2a2d3a] text-[12px] text-gray-600 hover:text-gray-400 hover:border-[#3a3d4a] transition-colors">
             + Add goal / accomplishment
           </button>
         )}
@@ -1205,7 +1371,7 @@ export function PerformanceReviewForm() {
           {step === 3 && <StepCompetency form={form} update={update} index={3} type="constructive" />}
           {step === 4 && <StepCompetency form={form} update={update} index={4} type="constructive" />}
           {step === 5 && <StepCompetency form={form} update={update} index={5} type="either" canToggleType />}
-          {step === 6 && <StepGoals form={form} update={update} />}
+          {step === 6 && <StepGoals form={form} update={update} saves={saves} currentReviewId={reviewIdRef.current} />}
           {step === 7 && <StepNextGoals form={form} update={update} />}
           {step === 8 && <StepOutput form={form} />}
         </div>
