@@ -1261,106 +1261,168 @@ function generateSection(title: string, content: string): string {
   return `${title}\n${'─'.repeat(50)}\n${content}\n`
 }
 
-function buildFullReview(form: FormData): string {
-  const stars = '★'.repeat(form.overallScore) + '☆'.repeat(5 - form.overallScore)
-  const scoreLabel = form.overallScore > 0 ? `${form.overallScore} Star — ${SCORE_LABELS[form.overallScore]?.label ?? ''}` : 'Not scored'
+const PREAMBLE = `All employees will have an annual performance review on or around the date of their work anniversary. It is with every intention that the Company will have periodic check-ins to ensure performance is, at minimum, meeting expectations and goal objectives are being met. All employees have the option to request a check-in at their discretion during the review period. However, this does not mean a formal review will be facilitated. Merit increases are determined by several factors including financial health, Company profitability, job performance, and consumer price index. A positive performance review does not guarantee a pay raise or continued employment.`
 
-  const header = [
-    `EMPLOYEE NAME:    ${form.employeeName}`,
-    `POSITION:         ${form.employeePosition}`,
-    `DIVISION:         ${form.employeeDivision}`,
-    `SUPERVISOR:       ${form.supervisorName}`,
-    `APPRAISAL PERIOD: ${form.appraisalPeriod}`,
-    `REVIEW DATE:      ${form.reviewDate}`,
-  ].join('\n')
+const PART_ONE_INTRO = `Identify 5-words from the drop-down menu that accurately describe your employee's performance during the relevant review period. Consider what is working about their performance and where improvements can be made. You will need to identify 2-3 positive areas and 2-3 constructive areas for improvement. At least one (1) but no more than three (3) explanations should be provided for each respective word. Please review the Glossary of Terms for the definition of each term.`
+
+const PART_TWO_INTRO = `If the employee had goals and objectives previously determined, indicate their progress and the successful or unsuccessful completion of the goals or objectives and the reason WHY you felt they have successfully or unsuccessfully fulfilled their growth initiatives. List any accomplishments made, either within their goal and objective roadmap or as stand-alone accomplishments. Use the Manager's Guide To Performance Reviews to help you form your evaluation.`
+
+const PART_THREE_INTRO = `Toward the end of the evaluation discussion, work on at least two (2) goals for the employee to meet for the next review period. Discuss roadmaps on how the employee plans to get there and hold them to it. It will be helpful to reference page two of the Managers Guide to Performance Evaluations to help identify, define, and craft goals and objectives using the SMART goal method.`
+
+function buildFullReview(form: FormData): string {
+  const scoreLabel = form.overallScore > 0 ? SCORE_LABELS[form.overallScore]?.label ?? '' : ''
 
   const compEntries = [
-    { entry: form.competencyOne,   label: 'COMPETENCY ONE (Positive)',               type: 'positive' },
-    { entry: form.competencyTwo,   label: 'COMPETENCY TWO (Positive)',               type: 'positive' },
-    { entry: form.competencyThree, label: 'COMPETENCY THREE (Constructive)',         type: 'constructive' },
-    { entry: form.competencyFour,  label: 'COMPETENCY FOUR (Constructive)',          type: 'constructive' },
-    { entry: form.competencyFive,  label: `COMPETENCY FIVE (${form.competencyFiveType === 'positive' ? 'Positive' : 'Constructive'})`, type: form.competencyFiveType },
+    { entry: form.competencyOne,   ordinal: 'ONE',   typeLabel: 'positive' },
+    { entry: form.competencyTwo,   ordinal: 'TWO',   typeLabel: 'positive' },
+    { entry: form.competencyThree, ordinal: 'THREE', typeLabel: 'constructive' },
+    { entry: form.competencyFour,  ordinal: 'FOUR',  typeLabel: 'constructive' },
+    { entry: form.competencyFive,  ordinal: 'FIVE',  typeLabel: form.competencyFiveType },
   ]
 
-  const competencyText = compEntries.map(({ entry, label }) => {
-    if (!entry.competency) return ''
-    const def = COMPETENCIES.find(c => c.name === entry.competency)?.definition ?? ''
+  const competencyText = compEntries.map(({ entry, ordinal, typeLabel }) => {
+    const name = entry.competency || 'SELECT ONE'
     const examples = entry.examples
-      .map((ex, i) => ex.trim() ? `  ${i + 1}. ${ex.trim()}` : '')
-      .filter(Boolean)
+      .map((ex, i) => `${i + 1}. ${ex.trim() || '[INSERT EXAMPLE]'}`)
       .join('\n')
-    return `${label}: ${entry.competency}\nDefinition: ${def}\n\nExplanation:\n${examples || '  [No examples provided]'}`
-  }).filter(Boolean).join('\n\n')
+    return `COMPETENCY ${ordinal} (${typeLabel}): ${name}\nEXPLANATION:\n${examples}`
+  }).join('\n\n')
 
-  const goalsText = form.goals
-    .filter(g => g.text.trim())
-    .map((g, i) => {
-      const status = g.status ? ` [${g.status.toUpperCase()}]` : ''
+  const goalsText = (() => {
+    const filled = form.goals.filter(g => g.text.trim())
+    if (!filled.length) return '1.\n2.\n3.\n4.\n5.'
+    return filled.map((g, i) => {
+      const status = g.status ? ` — ${g.status.toUpperCase()}` : ''
       const explanation = g.explanation.trim() ? `\n   ${g.explanation.trim()}` : ''
       return `${i + 1}. ${g.text.trim()}${status}${explanation}`
     }).join('\n\n')
+  })()
 
-  const scoreText = form.overallScore > 0
-    ? `OVERALL SCORE: ${stars} (${scoreLabel})${form.overallSummary.trim() ? '\n\n' + form.overallSummary.trim() : ''}`
-    : 'OVERALL SCORE: [Not scored]'
+  const scoreSection = form.overallScore > 0
+    ? `OVERALL PERFORMANCE EVALUATION SUMMARY:\nPlease reference the Managers Guide to performance reviews for the scoring matrix definitions.\n\nOVERALL SCORE: ${form.overallScore} — ${scoreLabel}${form.overallSummary.trim() ? '\n\n' + form.overallSummary.trim() : ''}`
+    : `OVERALL PERFORMANCE EVALUATION SUMMARY:\nOVERALL SCORE: [Not scored]`
 
-  const nextGoalsText = form.nextGoals
-    .filter(g => g.text.trim())
-    .map((g, i) => `${i + 1}. ${g.text.trim()}${g.targetDate.trim() ? `\n   Target Date: ${g.targetDate.trim()}` : ''}`)
-    .join('\n\n')
+  const nextGoalsText = (() => {
+    const entries = [0, 1, 2].map(i => {
+      const g = form.nextGoals[i]
+      if (g?.text.trim()) {
+        return `${i + 1}.\n${g.text.trim()}${g.targetDate.trim() ? `\nTarget Date: ${g.targetDate.trim()}` : ''}`
+      }
+      return `${i + 1}.`
+    })
+    return entries.join('\n\n')
+  })()
 
-  const sections = [
-    generateSection('EMPLOYEE INFORMATION', header),
-    generateSection('PART ONE: COMPETENCY EVALUATION', competencyText || '[No competencies filled in]'),
-    generateSection('PART TWO: GOALS, OBJECTIVES & ACCOMPLISHMENTS', (goalsText || '[No goals entered]') + '\n\n' + scoreText),
-    generateSection("PART THREE: NEXT YEAR'S GOALS & OBJECTIVES", nextGoalsText || '[No goals entered]'),
-  ]
+  const sigLines = `__________________________________                                _______________
+Employee Name                                                        Date Signed
 
-  return sections.join('\n')
+
+__________________________________
+Employee Signature`
+
+  return [
+    PREAMBLE,
+    '',
+    `Employee Name: ${form.employeeName || ''}`,
+    `Employee Position: ${form.employeePosition || ''}`,
+    `Employee Division: ${form.employeeDivision || ''}`,
+    `Supervisor Name: ${form.supervisorName || ''}`,
+    `Appraisal Period: ${form.appraisalPeriod || ''}`,
+    `Review Date: ${form.reviewDate || ''}`,
+    '',
+    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+    'PART ONE',
+    PART_ONE_INTRO,
+    '',
+    'COMPETENCY EVALUATION',
+    '',
+    competencyText,
+    '',
+    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+    'PART TWO',
+    PART_TWO_INTRO,
+    '',
+    'GOALS, OBJECTIVES, ACCOMPLISHMENTS',
+    '',
+    'Goals/Objectives/Accomplishments: Evaluate the goals and objectives that were met and any accomplishments that have been made over the relevant review period. Indicate whether the goals and objectives were successful/unsuccessful and why:',
+    '',
+    goalsText,
+    '',
+    scoreSection,
+    '',
+    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+    'PART THREE',
+    PART_THREE_INTRO,
+    '',
+    "Next Year's Goals and Objectives for Future Development: Work on these with the employee and identify anticipated completion dates. These goals and objectives should be included in the following years' evaluation appraisal period.",
+    '',
+    nextGoalsText,
+    '',
+    sigLines,
+    '',
+    'EMPLOYEE COMMENTS',
+  ].join('\n')
 }
 
 function StepOutput({ form }: { form: FormData }) {
-  const stars = '★'.repeat(form.overallScore) + '☆'.repeat(5 - form.overallScore)
-  const scoreLabel = form.overallScore > 0 ? SCORE_LABELS[form.overallScore]?.label : 'Not scored'
+  const [driveStatus, setDriveStatus] = useState<'idle' | 'sending' | 'done' | 'error'>('idle')
+  const [driveUrl, setDriveUrl]       = useState('')
+  const [driveError, setDriveError]   = useState('')
+
+  const scoreInfo = form.overallScore > 0 ? SCORE_LABELS[form.overallScore] : null
 
   const compEntries = [
-    { entry: form.competencyOne,   label: 'COMPETENCY ONE', badge: 'Positive' },
-    { entry: form.competencyTwo,   label: 'COMPETENCY TWO', badge: 'Positive' },
-    { entry: form.competencyThree, label: 'COMPETENCY THREE', badge: 'Constructive' },
-    { entry: form.competencyFour,  label: 'COMPETENCY FOUR', badge: 'Constructive' },
-    { entry: form.competencyFive,  label: 'COMPETENCY FIVE', badge: form.competencyFiveType === 'positive' ? 'Positive' : 'Constructive' },
+    { entry: form.competencyOne,   ordinal: 'ONE',   typeLabel: 'positive' as const },
+    { entry: form.competencyTwo,   ordinal: 'TWO',   typeLabel: 'positive' as const },
+    { entry: form.competencyThree, ordinal: 'THREE', typeLabel: 'constructive' as const },
+    { entry: form.competencyFour,  ordinal: 'FOUR',  typeLabel: 'constructive' as const },
+    { entry: form.competencyFive,  ordinal: 'FIVE',  typeLabel: form.competencyFiveType },
   ]
 
-  const headerText = [
-    `Employee Name: ${form.employeeName}`,
-    `Employee Position: ${form.employeePosition}`,
-    `Employee Division: ${form.employeeDivision}`,
-    `Supervisor Name: ${form.supervisorName}`,
-    `Appraisal Period: ${form.appraisalPeriod}`,
-    `Review Date: ${form.reviewDate}`,
-  ].join('\n')
+  const fullReview = buildFullReview(form)
 
-  const competencyBlockText = (entry: CompetencyEntry, type: string) => {
-    const def = COMPETENCIES.find(c => c.name === entry.competency)?.definition ?? ''
-    const examples = entry.examples.map((ex, i) => ex.trim() ? `${i + 1}. ${ex.trim()}` : '').filter(Boolean).join('\n')
-    return `${entry.competency} (${type})\n${def}\n\nExplanation:\n${examples || '[No examples]'}`
+  async function handleSendToDrive() {
+    setDriveStatus('sending')
+    setDriveError('')
+    try {
+      const res = await fetch('/api/performance-review/send-to-drive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) throw new Error(data.error ?? 'Unknown error')
+      setDriveUrl(data.docUrl)
+      setDriveStatus('done')
+    } catch (err) {
+      setDriveError(String(err))
+      setDriveStatus('error')
+    }
   }
 
-  const goalsText = form.goals.filter(g => g.text.trim()).map((g, i) => {
-    const status = g.status ? ` [${g.status.toUpperCase()}]` : ''
-    const explanation = g.explanation.trim() ? `\n${g.explanation.trim()}` : ''
+  // Per-competency copy text matching template format
+  const compCopyText = (entry: CompetencyEntry, ordinal: string, typeLabel: string) => {
+    const examples = entry.examples
+      .map((ex, i) => `${i + 1}. ${ex.trim() || '[INSERT EXAMPLE]'}`)
+      .join('\n')
+    return `COMPETENCY ${ordinal} (${typeLabel}): ${entry.competency || 'SELECT ONE'}\nEXPLANATION:\n${examples}`
+  }
+
+  const goalsForCopy = form.goals.filter(g => g.text.trim()).map((g, i) => {
+    const status = g.status ? ` — ${g.status.toUpperCase()}` : ''
+    const explanation = g.explanation.trim() ? `\n   ${g.explanation.trim()}` : ''
     return `${i + 1}. ${g.text.trim()}${status}${explanation}`
   }).join('\n\n')
 
-  const scoreText = form.overallScore > 0
-    ? `Overall Score: ${stars} (${form.overallScore} Star — ${scoreLabel})${form.overallSummary.trim() ? '\n\n' + form.overallSummary.trim() : ''}`
-    : 'Overall Score: [Not scored]'
+  const scoreCopyText = scoreInfo
+    ? `OVERALL PERFORMANCE EVALUATION SUMMARY:\nOVERALL SCORE: ${form.overallScore} — ${scoreInfo.label}${form.overallSummary.trim() ? '\n\n' + form.overallSummary.trim() : ''}`
+    : 'OVERALL PERFORMANCE EVALUATION SUMMARY:\nOVERALL SCORE: [Not scored]'
 
-  const nextGoalsText = form.nextGoals.filter(g => g.text.trim()).map((g, i) =>
-    `${i + 1}. ${g.text.trim()}${g.targetDate.trim() ? `\nTarget Date: ${g.targetDate.trim()}` : ''}`
-  ).join('\n\n')
-
-  const fullReview = buildFullReview(form)
+  const nextGoalsCopyText = [0, 1, 2].map(i => {
+    const g = form.nextGoals[i]
+    if (g?.text.trim()) return `${i + 1}.\n${g.text.trim()}${g.targetDate.trim() ? `\nTarget Date: ${g.targetDate.trim()}` : ''}`
+    return `${i + 1}.`
+  }).join('\n\n')
 
   return (
     <div className="space-y-4">
@@ -1372,41 +1434,71 @@ function StepOutput({ form }: { form: FormData }) {
         <CopyButton text={fullReview} label="Copy Full Review" />
       </div>
 
-      {/* Header */}
-      <OutputBlock title="EMPLOYEE INFORMATION" copyText={headerText}>
-        <div className="grid grid-cols-2 gap-1">
+      {/* Preamble */}
+      <div className="rounded-xl border border-[#1e2030] bg-[#0a0c14] overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-[#1e2030] bg-[#0d0f1a]">
+          <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Policy Statement</span>
+        </div>
+        <div className="px-4 py-3">
+          <p className="text-[11px] text-gray-500 italic leading-relaxed">{PREAMBLE}</p>
+        </div>
+      </div>
+
+      {/* Header fields */}
+      <OutputBlock title="EMPLOYEE INFORMATION" copyText={[
+        `Employee Name: ${form.employeeName}`,
+        `Employee Position: ${form.employeePosition}`,
+        `Employee Division: ${form.employeeDivision}`,
+        `Supervisor Name: ${form.supervisorName}`,
+        `Appraisal Period: ${form.appraisalPeriod}`,
+        `Review Date: ${form.reviewDate}`,
+      ].join('\n')}>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
           {[
             ['Employee Name', form.employeeName],
-            ['Position', form.employeePosition],
-            ['Division', form.employeeDivision],
-            ['Supervisor', form.supervisorName],
+            ['Employee Position', form.employeePosition],
+            ['Employee Division', form.employeeDivision],
+            ['Supervisor Name', form.supervisorName],
             ['Appraisal Period', form.appraisalPeriod],
             ['Review Date', form.reviewDate],
           ].map(([k, v]) => (
-            <div key={k}>
-              <span className="text-[10px] text-gray-600">{k}: </span>
+            <div key={k} className="flex gap-1">
+              <span className="text-[10px] text-gray-600 shrink-0">{k}:</span>
               <span className="text-[12px] text-gray-300">{v || '—'}</span>
             </div>
           ))}
         </div>
       </OutputBlock>
 
-      {/* Competencies */}
-      <div>
-        <p className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider mb-2">PART ONE — COMPETENCY EVALUATION</p>
-        <div className="space-y-2">
-          {compEntries.map(({ entry, label, badge }, i) => {
-            if (!entry.competency) return null
-            const isPositive = badge === 'Positive'
+      {/* PART ONE */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">PART ONE</span>
+          <div className="flex-1 h-px bg-[#1e2030]" />
+          <span className="text-[10px] text-gray-600">COMPETENCY EVALUATION</span>
+        </div>
+        <p className="text-[11px] text-gray-600 leading-relaxed">{PART_ONE_INTRO}</p>
+        <div className="space-y-2 pt-1">
+          {compEntries.map(({ entry, ordinal, typeLabel }, i) => {
+            const isPositive = typeLabel === 'positive'
             const badgeColor = isPositive ? 'text-emerald-500' : 'text-orange-500'
-            const copyText = competencyBlockText(entry, badge)
+            const badge = isPositive ? 'positive' : 'constructive'
             return (
-              <OutputBlock key={i} title={`${label}: ${entry.competency}`} badge={badge} badgeColor={badgeColor} copyText={copyText}>
+              <OutputBlock
+                key={i}
+                title={`COMPETENCY ${ordinal} (${badge}): ${entry.competency || 'SELECT ONE'}`}
+                badge={undefined}
+                badgeColor={badgeColor}
+                copyText={compCopyText(entry, ordinal, typeLabel)}
+              >
                 <div className="space-y-1">
-                  {entry.examples.filter(e => e.trim()).map((ex, j) => (
-                    <p key={j} className="text-[12px] text-gray-300"><span className="text-gray-600">{j + 1}.</span> {ex}</p>
+                  <p className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider mb-1.5">EXPLANATION:</p>
+                  {[0, 1, 2].map(j => (
+                    <p key={j} className="text-[12px] text-gray-300">
+                      <span className="text-gray-600">{j + 1}.</span>{' '}
+                      {entry.examples[j]?.trim() || <span className="text-gray-700 italic">[INSERT EXAMPLE]</span>}
+                    </p>
                   ))}
-                  {entry.examples.every(e => !e.trim()) && <p className="text-[12px] text-gray-600 italic">No examples added.</p>}
                 </div>
               </OutputBlock>
             )
@@ -1414,51 +1506,182 @@ function StepOutput({ form }: { form: FormData }) {
         </div>
       </div>
 
-      {/* Goals */}
-      <OutputBlock title="PART TWO — GOALS, OBJECTIVES & ACCOMPLISHMENTS" copyText={goalsText + '\n\n' + scoreText}>
-        <div className="space-y-2">
-          {form.goals.filter(g => g.text.trim()).map((g, i) => (
-            <div key={i} className="space-y-0.5">
-              <div className="flex items-start gap-2">
-                <span className="text-gray-600 text-[12px]">{i + 1}.</span>
-                <div className="flex-1">
-                  <span className="text-[12px] text-gray-300">{g.text}</span>
-                  {g.status && (
-                    <span className={`ml-2 text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded ${
-                      g.status === 'successful' ? 'bg-emerald-900/40 text-emerald-400'
-                      : g.status === 'unsuccessful' ? 'bg-red-900/40 text-red-400'
-                      : 'bg-amber-900/40 text-amber-400'
-                    }`}>{g.status}</span>
-                  )}
-                  {g.explanation && <p className="text-[11px] text-gray-500 mt-0.5">{g.explanation}</p>}
+      {/* PART TWO */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">PART TWO</span>
+          <div className="flex-1 h-px bg-[#1e2030]" />
+          <span className="text-[10px] text-gray-600">GOALS, OBJECTIVES & ACCOMPLISHMENTS</span>
+        </div>
+        <p className="text-[11px] text-gray-600 leading-relaxed">{PART_TWO_INTRO}</p>
+        <OutputBlock title="GOALS, OBJECTIVES, ACCOMPLISHMENTS" copyText={goalsForCopy + '\n\n' + scoreCopyText}>
+          <div className="space-y-3">
+            <p className="text-[10px] text-gray-600 leading-snug">
+              Goals/Objectives/Accomplishments: Evaluate the goals and objectives that were met and any accomplishments that have been made over the relevant review period. Indicate whether the goals and objectives were successful/unsuccessful and why:
+            </p>
+            <div className="space-y-2">
+              {[0, 1, 2, 3, 4].map(i => {
+                const g = form.goals[i]
+                if (!g?.text.trim()) {
+                  return (
+                    <p key={i} className="text-[12px] text-gray-700">
+                      <span className="text-gray-600">{i + 1}.</span>
+                    </p>
+                  )
+                }
+                return (
+                  <div key={i} className="space-y-0.5">
+                    <div className="flex items-start gap-2">
+                      <span className="text-gray-600 text-[12px] shrink-0">{i + 1}.</span>
+                      <div className="flex-1">
+                        <span className="text-[12px] text-gray-300">{g.text}</span>
+                        {g.status && (
+                          <span className={`ml-2 text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded ${
+                            g.status === 'successful' ? 'bg-emerald-900/40 text-emerald-400'
+                            : g.status === 'unsuccessful' ? 'bg-red-900/40 text-red-400'
+                            : 'bg-amber-900/40 text-amber-400'
+                          }`}>{g.status}</span>
+                        )}
+                        {g.explanation && <p className="text-[11px] text-gray-500 mt-0.5">{g.explanation}</p>}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            {/* Overall Score */}
+            <div className="mt-3 pt-3 border-t border-[#1e2030] space-y-1">
+              <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">OVERALL PERFORMANCE EVALUATION SUMMARY</p>
+              <p className="text-[10px] text-gray-700">Please reference the Managers Guide to performance reviews for the scoring matrix definitions.</p>
+              {scoreInfo ? (
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[10px] text-gray-600 uppercase tracking-wider">OVERALL SCORE</span>
+                  <span className={`text-sm font-bold ${scoreInfo.color}`}>{form.overallScore}</span>
+                  <span className={`text-[12px] font-semibold ${scoreInfo.color}`}>{scoreInfo.label}</span>
                 </div>
-              </div>
+              ) : (
+                <p className="text-[12px] text-gray-600 italic mt-1">Not scored yet.</p>
+              )}
+              {form.overallSummary && <p className="text-[11px] text-gray-400 mt-1">{form.overallSummary}</p>}
             </div>
-          ))}
-          {form.goals.every(g => !g.text.trim()) && <p className="text-[12px] text-gray-600 italic">No goals entered.</p>}
-          {form.overallScore > 0 && (
-            <div className="mt-3 pt-3 border-t border-[#1e2030]">
-              <p className={`text-sm font-semibold ${SCORE_LABELS[form.overallScore].color}`}>
-                Overall Score: {stars} ({form.overallScore} Star — {scoreLabel})
-              </p>
-              {form.overallSummary && <p className="text-[11px] text-gray-500 mt-1">{form.overallSummary}</p>}
+          </div>
+        </OutputBlock>
+      </div>
+
+      {/* PART THREE */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">PART THREE</span>
+          <div className="flex-1 h-px bg-[#1e2030]" />
+          <span className="text-[10px] text-gray-600">NEXT YEAR&apos;S GOALS</span>
+        </div>
+        <p className="text-[11px] text-gray-600 leading-relaxed">{PART_THREE_INTRO}</p>
+        <OutputBlock title="NEXT YEAR'S GOALS AND OBJECTIVES" copyText={nextGoalsCopyText}>
+          <div className="space-y-1.5">
+            <p className="text-[10px] text-gray-600 leading-snug mb-2">
+              Next Year&apos;s Goals and Objectives for Future Development: Work on these with the employee and identify anticipated completion dates. These goals and objectives should be included in the following years&apos; evaluation appraisal period.
+            </p>
+            {[0, 1, 2].map(i => {
+              const g = form.nextGoals[i]
+              const hasText = g?.text.trim()
+              return (
+                <div key={i} className="space-y-0.5">
+                  <p className="text-[12px] text-gray-300">
+                    <span className="text-gray-600">{i + 1}.</span>{' '}
+                    {hasText ? g.text : <span className="text-gray-700 italic">(not set)</span>}
+                  </p>
+                  {hasText && g.targetDate && (
+                    <p className="text-[11px] text-gray-500 ml-4">Target Date: {g.targetDate}</p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </OutputBlock>
+      </div>
+
+      {/* Signature & Employee Comments */}
+      <OutputBlock title="SIGNATURES & EMPLOYEE COMMENTS" copyText={`__________________________________                                _______________\nEmployee Name                                                        Date Signed\n\n\n__________________________________\nEmployee Signature\n\n\nEMPLOYEE COMMENTS`}>
+        <div className="space-y-4">
+          <div className="flex items-end gap-10">
+            <div className="space-y-1 flex-1">
+              <div className="h-px bg-gray-700 w-56" />
+              <p className="text-[10px] text-gray-600">Employee Name</p>
             </div>
-          )}
+            <div className="space-y-1 w-32">
+              <div className="h-px bg-gray-700 w-32" />
+              <p className="text-[10px] text-gray-600">Date Signed</p>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <div className="h-px bg-gray-700 w-56" />
+            <p className="text-[10px] text-gray-600">Employee Signature</p>
+          </div>
+          <div className="pt-2 border-t border-[#1e2030]">
+            <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">EMPLOYEE COMMENTS</p>
+            <div className="h-16 rounded border border-dashed border-[#2a2d3e] bg-[#0d0f1a]/50" />
+          </div>
         </div>
       </OutputBlock>
 
-      {/* Next year goals */}
-      <OutputBlock title="PART THREE — NEXT YEAR'S GOALS" copyText={nextGoalsText}>
-        <div className="space-y-2">
-          {form.nextGoals.filter(g => g.text.trim()).map((g, i) => (
-            <div key={i}>
-              <p className="text-[12px] text-gray-300"><span className="text-gray-600">{i + 1}.</span> {g.text}</p>
-              {g.targetDate && <p className="text-[11px] text-gray-500 ml-4">Target Date: {g.targetDate}</p>}
-            </div>
-          ))}
-          {form.nextGoals.every(g => !g.text.trim()) && <p className="text-[12px] text-gray-600 italic">No goals entered.</p>}
+      {/* ── Approve & Send to Drive ── */}
+      <div className="rounded-xl border border-emerald-900/50 bg-emerald-950/20 p-5 space-y-3">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[13px] font-semibold text-emerald-300">Approve &amp; Send to Drive</p>
+            <p className="text-[11px] text-gray-500 mt-0.5">
+              Creates a formatted Google Doc in the Performance Reviews folder and opens it for you.
+            </p>
+          </div>
+
+          {driveStatus === 'idle' || driveStatus === 'error' ? (
+            <button
+              onClick={handleSendToDrive}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[13px] font-semibold transition-colors shrink-0"
+            >
+              {/* Google Drive icon */}
+              <svg className="w-4 h-4" viewBox="0 0 87.3 78" fill="currentColor">
+                <path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0a15.4 15.4 0 003.3 8.5l3.3 5.35z" fill="#0066da"/>
+                <path d="M43.65 25L29.9 1.2a15.4 15.4 0 00-3.3 3.3L.95 50.3a15.4 15.4 0 00-1 5.35h27.5L43.65 25z" fill="#00ac47"/>
+                <path d="M73.55 76.8a15.4 15.4 0 003.3-3.3l1.6-2.75 7.65-13.2a15.4 15.4 0 001-5.35H59.6l5.85 11.5 8.1 13.1z" fill="#ea4335"/>
+                <path d="M43.65 25L57.4 1.2a15.4 15.4 0 00-8.35-1.2H38.3a15.4 15.4 0 00-8.4 1.2L43.65 25z" fill="#00832d"/>
+                <path d="M59.6 55.65h27.5a15.4 15.4 0 00-1-5.35L62.85 8.5A15.4 15.4 0 0059.55 5.2L43.65 25l15.95 30.65z" fill="#2684fc"/>
+                <path d="M43.65 25L27.5 55.65H59.6L43.65 25z" fill="#00ac47"/>
+              </svg>
+              Approve &amp; Send to Drive
+            </button>
+          ) : driveStatus === 'sending' ? (
+            <button disabled className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-800 text-emerald-400 text-[13px] font-semibold shrink-0 cursor-not-allowed">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Creating document…
+            </button>
+          ) : (
+            <a
+              href={driveUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-[13px] font-semibold transition-colors shrink-0"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              Open in Google Docs ↗
+            </a>
+          )}
         </div>
-      </OutputBlock>
+
+        {driveStatus === 'done' && (
+          <div className="flex items-center gap-2 text-[11px] text-emerald-400 bg-emerald-950/40 rounded-lg px-3 py-2">
+            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+            <span>Document saved to your Performance Reviews folder.</span>
+            <a href={driveUrl} target="_blank" rel="noopener noreferrer" className="ml-auto underline hover:text-emerald-300 shrink-0">View →</a>
+          </div>
+        )}
+
+        {driveStatus === 'error' && (
+          <div className="text-[11px] text-red-400 bg-red-950/30 rounded-lg px-3 py-2">
+            <span className="font-semibold">Error: </span>{driveError}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
