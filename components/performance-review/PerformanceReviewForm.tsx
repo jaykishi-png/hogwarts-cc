@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Copy, CheckCircle2, ChevronRight, ChevronLeft, Sparkles, Loader2, Star, History, X, Clock } from 'lucide-react'
+import { Copy, CheckCircle2, ChevronRight, ChevronLeft, Sparkles, Loader2, Star, History, X, Clock, RefreshCw } from 'lucide-react'
 
 // ─── Competency glossary ──────────────────────────────────────────────────────
 
@@ -936,6 +936,8 @@ function StepGoals({
 function StepNextGoals({ form, update }: { form: FormData; update: (p: Partial<FormData>) => void }) {
   const [drafting, setDrafting] = useState(false)
   const [draftError, setDraftError] = useState('')
+  const [redraftingIndex, setRedraftingIndex] = useState<number | null>(null)
+  const [redraftError, setRedraftError] = useState<string>('')
 
   const nextPeriodStart = parseNextPeriodStart(form.appraisalPeriod)
 
@@ -998,6 +1000,49 @@ function StepNextGoals({ form, update }: { form: FormData; update: (p: Partial<F
     }
   }
 
+  async function handleRedraft(goalIndex: number) {
+    setRedraftingIndex(goalIndex)
+    setRedraftError('')
+    try {
+      const res = await fetch('/api/performance-review/redraft-goal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          goalIndex,
+          existingGoals: form.nextGoals.map(g => ({ text: g.text, targetDate: g.targetDate })),
+          employeeName: form.employeeName,
+          role: form.employeePosition,
+          appraisalPeriod: form.appraisalPeriod,
+          nextPeriodStart,
+          competencies: [
+            { competency: form.competencyOne.competency,   type: 'positive',              examples: form.competencyOne.examples },
+            { competency: form.competencyTwo.competency,   type: 'positive',              examples: form.competencyTwo.examples },
+            { competency: form.competencyThree.competency, type: 'constructive',          examples: form.competencyThree.examples },
+            { competency: form.competencyFour.competency,  type: 'constructive',          examples: form.competencyFour.examples },
+            { competency: form.competencyFive.competency,  type: form.competencyFiveType, examples: form.competencyFive.examples },
+          ].filter(c => c.competency),
+          goals: form.goals.filter(g => g.text.trim()),
+          overallScore: form.overallScore,
+          overallSummary: form.overallSummary,
+        }),
+      })
+      const data = await res.json() as { goal?: { text: string; targetDate: string }; error?: string }
+      if (data.error) { setRedraftError(data.error); return }
+      if (data.goal) {
+        const updated = [...form.nextGoals]
+        updated[goalIndex] = {
+          text: data.goal.text,
+          targetDate: data.goal.targetDate || nextPeriodStart,
+        }
+        update({ nextGoals: updated })
+      }
+    } catch (err) {
+      setRedraftError(String(err))
+    } finally {
+      setRedraftingIndex(null)
+    }
+  }
+
   return (
     <div className="space-y-4">
 
@@ -1048,46 +1093,76 @@ function StepNextGoals({ form, update }: { form: FormData; update: (p: Partial<F
         </p>
       </div>
 
+      {redraftError && (
+        <div className="flex items-start gap-2 rounded-xl border border-red-800/40 bg-red-900/10 p-3 text-[11px] text-red-300">
+          <span className="flex-shrink-0 mt-px">⚠</span>
+          <span>{redraftError}</span>
+        </div>
+      )}
+
       {/* Goal cards */}
       <div className="space-y-4">
-        {form.nextGoals.map((goal, i) => (
-          <div key={i} className="p-4 rounded-xl border border-[#1e2030] bg-[#0a0c14] space-y-3">
-            <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
-              Goal {i + 1}{i === 0 ? ' *' : ''}
-            </span>
-            <div>
-              <Label>Goal Description</Label>
-              <TextArea
-                value={goal.text}
-                onChange={v => updateGoal(i, { text: v })}
-                placeholder={i === 0 ? 'e.g. Improve video turnaround time to under 48 hours for standard projects by Q3' : 'Optional'}
-                rows={3}
-              />
-            </div>
-            <div>
-              <Label>Target Completion Date</Label>
-              <div className="relative">
-                <Input
-                  value={goal.targetDate}
-                  onChange={v => updateGoal(i, { targetDate: v })}
-                  placeholder={nextPeriodStart || 'e.g. May 2027'}
+        {form.nextGoals.map((goal, i) => {
+          const isRedrafting = redraftingIndex === i
+          return (
+            <div
+              key={i}
+              className={`p-4 rounded-xl border bg-[#0a0c14] space-y-3 transition-colors ${
+                isRedrafting ? 'border-purple-700/40' : 'border-[#1e2030]'
+              }`}
+            >
+              {/* Card header row */}
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+                  Goal {i + 1}{i === 0 ? ' *' : ''}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleRedraft(i)}
+                  disabled={isRedrafting || drafting}
+                  title="Generate a different goal for this slot"
+                  className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-purple-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  {isRedrafting
+                    ? <><Loader2 size={11} className="animate-spin" /> Regenerating…</>
+                    : <><RefreshCw size={11} /> Regenerate</>}
+                </button>
+              </div>
+
+              <div>
+                <Label>Goal Description</Label>
+                <TextArea
+                  value={goal.text}
+                  onChange={v => updateGoal(i, { text: v })}
+                  placeholder={i === 0 ? 'e.g. Improve video turnaround time to under 48 hours for standard projects by Q3' : 'Optional'}
+                  rows={3}
                 />
-                {nextPeriodStart && !goal.targetDate && (
-                  <button
-                    type="button"
-                    onClick={() => updateGoal(i, { targetDate: nextPeriodStart })}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-purple-500 hover:text-purple-300 transition-colors"
-                  >
-                    Use {nextPeriodStart}
-                  </button>
+              </div>
+              <div>
+                <Label>Target Completion Date</Label>
+                <div className="relative">
+                  <Input
+                    value={goal.targetDate}
+                    onChange={v => updateGoal(i, { targetDate: v })}
+                    placeholder={nextPeriodStart || 'e.g. May 2027'}
+                  />
+                  {nextPeriodStart && !goal.targetDate && (
+                    <button
+                      type="button"
+                      onClick={() => updateGoal(i, { targetDate: nextPeriodStart })}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-purple-500 hover:text-purple-300 transition-colors"
+                    >
+                      Use {nextPeriodStart}
+                    </button>
+                  )}
+                </div>
+                {nextPeriodStart && goal.targetDate === nextPeriodStart && (
+                  <p className="mt-1 text-[10px] text-gray-600">📅 Auto-set from appraisal period</p>
                 )}
               </div>
-              {nextPeriodStart && goal.targetDate === nextPeriodStart && (
-                <p className="mt-1 text-[10px] text-gray-600">📅 Auto-set from appraisal period</p>
-              )}
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
