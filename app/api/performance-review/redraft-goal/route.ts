@@ -7,23 +7,24 @@ export const maxDuration = 30
 export async function POST(req: NextRequest) {
   try {
     const {
-      goalIndex, existingGoals,
-      employeeName, role, appraisalPeriod, nextPeriodStart,
+      goalIndex, existingGoals, userGuidance,
+      employeeName, role, appraisalPeriod, nextAppraisalPeriod,
       competencies, goals, overallScore, overallSummary,
     } = await req.json() as {
       goalIndex: number
       existingGoals: Array<{ text: string; targetDate: string }>
+      userGuidance?: string
       employeeName: string
       role: string
       appraisalPeriod: string
-      nextPeriodStart: string
+      nextAppraisalPeriod: string
       competencies: Array<{ competency: string; type: string; examples: string[] }>
       goals: Array<{ text: string; status: string; explanation: string }>
       overallScore: number
       overallSummary: string
     }
 
-    const targetDate = nextPeriodStart || 'end of next review period'
+    const targetDate = nextAppraisalPeriod || 'next appraisal period'
 
     const constructive = competencies.filter(c => c.type === 'constructive')
     const positive     = competencies.filter(c => c.type === 'positive')
@@ -64,9 +65,14 @@ ${goalsBlock}
 
 ━━━ ALREADY DRAFTED GOALS (make this one DIFFERENT in theme and focus) ━━━
 ${existingBlock}
-
+${userGuidance ? `
+━━━ MANAGER'S SPECIFIC REQUEST (highest priority — follow this above all else) ━━━
+  ${userGuidance}
+` : ''}
 Rules:
-- Root the goal in a CONSTRUCTIVE competency area not already covered by the drafted goals above
+${userGuidance
+  ? `- The manager's specific request above overrides all other guidance — build the goal around it`
+  : `- Root the goal in a CONSTRUCTIVE competency area not already covered by the drafted goals above`}
 - If all constructive areas are covered, use a positive strength to frame a stretch goal
 - Must be specific and measurable — success should be objectively verifiable
 - Different in theme/focus from every already-drafted goal

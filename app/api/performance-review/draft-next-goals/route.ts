@@ -7,20 +7,20 @@ export const maxDuration = 30
 export async function POST(req: NextRequest) {
   try {
     const {
-      employeeName, role, appraisalPeriod, nextPeriodStart,
+      employeeName, role, appraisalPeriod, nextAppraisalPeriod,
       competencies, goals, overallScore, overallSummary,
     } = await req.json() as {
       employeeName: string
       role: string
       appraisalPeriod: string
-      nextPeriodStart: string
+      nextAppraisalPeriod: string
       competencies: Array<{ competency: string; type: string; examples: string[] }>
       goals: Array<{ text: string; status: string; explanation: string }>
       overallScore: number
       overallSummary: string
     }
 
-    const targetDate = nextPeriodStart || 'end of next review period'
+    const targetDate = nextAppraisalPeriod || 'end of next review period'
 
     // Split competencies into constructive vs positive for emphasis
     const constructive = competencies.filter(c => c.type === 'constructive')

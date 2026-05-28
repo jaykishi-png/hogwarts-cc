@@ -163,12 +163,35 @@ function deleteSave(id: string): void {
   localStorage.setItem(SAVES_KEY, JSON.stringify(getSaves().filter(s => s.id !== id)))
 }
 
-function parseNextPeriodStart(appraisalPeriod: string): string {
+/**
+ * Given the current appraisal period, returns the NEXT period.
+ * "2025 - 2026"          → "2026 - 2027"
+ * "May 2025 – May 2026"  → "May 2026 – May 2027"
+ * Falls back to empty string if the period can't be parsed.
+ */
+function computeNextAppraisalPeriod(appraisalPeriod: string): string {
   if (!appraisalPeriod.trim()) return ''
-  // Split on em/en dash or spaced hyphen: "May 2025 – May 2026" → "May 2026"
+
   const parts = appraisalPeriod.split(/\s*[–—]\s*|\s*-\s*/)
-  if (parts.length >= 2) return parts[parts.length - 1].trim()
-  return ''
+  if (parts.length < 2) return ''
+
+  const endPart  = parts[parts.length - 1].trim()   // e.g. "May 2026" or "2026"
+  const yearMatch = endPart.match(/(\d{4})/)
+  if (!yearMatch) return ''
+
+  const endYear  = parseInt(yearMatch[1])
+  const nextYear = endYear + 1
+
+  // Pure-year format: "2025 - 2026" → "2026 - 2027"
+  if (/^\d{4}$/.test(endPart)) {
+    const startYear = parseInt(parts[0].trim())
+    const gap = endYear - startYear
+    return `${endYear} - ${endYear + gap}`
+  }
+
+  // Month-year format: "May 2025 – May 2026" → "May 2026 – May 2027"
+  const nextEnd = endPart.replace(/\d{4}/, String(nextYear))
+  return `${endPart} – ${nextEnd}`
 }
 
 function relativeTime(iso: string): string {
@@ -938,19 +961,21 @@ function StepNextGoals({ form, update }: { form: FormData; update: (p: Partial<F
   const [draftError, setDraftError] = useState('')
   const [redraftingIndex, setRedraftingIndex] = useState<number | null>(null)
   const [redraftError, setRedraftError] = useState<string>('')
+  const [repromptIndex, setRepromptIndex] = useState<number | null>(null)
+  const [repromptTexts, setRepromptTexts] = useState<Record<number, string>>({})
 
-  const nextPeriodStart = parseNextPeriodStart(form.appraisalPeriod)
+  const nextAppraisalPeriod = computeNextAppraisalPeriod(form.appraisalPeriod)
 
   // Auto-fill empty target dates whenever the appraisal period is set
   useEffect(() => {
-    if (!nextPeriodStart) return
+    if (!nextAppraisalPeriod) return
     const needsUpdate = form.nextGoals.some(g => !g.targetDate)
     if (!needsUpdate) return
     update({
-      nextGoals: form.nextGoals.map(g => ({ ...g, targetDate: g.targetDate || nextPeriodStart })),
+      nextGoals: form.nextGoals.map(g => ({ ...g, targetDate: g.targetDate || nextAppraisalPeriod })),
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nextPeriodStart])
+  }, [nextAppraisalPeriod])
 
   function updateGoal(i: number, patch: Partial<NextGoal>) {
     const g = [...form.nextGoals]
@@ -966,7 +991,7 @@ function StepNextGoals({ form, update }: { form: FormData; update: (p: Partial<F
         employeeName: form.employeeName,
         role: form.employeePosition,
         appraisalPeriod: form.appraisalPeriod,
-        nextPeriodStart,
+        nextAppraisalPeriod,
         competencies: [
           { competency: form.competencyOne.competency,   type: 'positive',                examples: form.competencyOne.examples },
           { competency: form.competencyTwo.competency,   type: 'positive',                examples: form.competencyTwo.examples },
@@ -988,7 +1013,7 @@ function StepNextGoals({ form, update }: { form: FormData; update: (p: Partial<F
       if (data.goals?.length) {
         const drafted: NextGoal[] = data.goals.map(g => ({
           text: g.text ?? '',
-          targetDate: g.targetDate || nextPeriodStart,
+          targetDate: g.targetDate || nextAppraisalPeriod,
         }))
         while (drafted.length < 3) drafted.push(emptyNextGoal())
         update({ nextGoals: drafted.slice(0, 3) })
@@ -1000,7 +1025,7 @@ function StepNextGoals({ form, update }: { form: FormData; update: (p: Partial<F
     }
   }
 
-  async function handleRedraft(goalIndex: number) {
+  async function handleRedraft(goalIndex: number, userGuidance?: string) {
     setRedraftingIndex(goalIndex)
     setRedraftError('')
     try {
@@ -1009,11 +1034,12 @@ function StepNextGoals({ form, update }: { form: FormData; update: (p: Partial<F
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           goalIndex,
+          userGuidance: userGuidance?.trim() || undefined,
           existingGoals: form.nextGoals.map(g => ({ text: g.text, targetDate: g.targetDate })),
           employeeName: form.employeeName,
           role: form.employeePosition,
           appraisalPeriod: form.appraisalPeriod,
-          nextPeriodStart,
+          nextAppraisalPeriod,
           competencies: [
             { competency: form.competencyOne.competency,   type: 'positive',              examples: form.competencyOne.examples },
             { competency: form.competencyTwo.competency,   type: 'positive',              examples: form.competencyTwo.examples },
@@ -1032,9 +1058,12 @@ function StepNextGoals({ form, update }: { form: FormData; update: (p: Partial<F
         const updated = [...form.nextGoals]
         updated[goalIndex] = {
           text: data.goal.text,
-          targetDate: data.goal.targetDate || nextPeriodStart,
+          targetDate: data.goal.targetDate || nextAppraisalPeriod,
         }
         update({ nextGoals: updated })
+        // Close the re-prompt panel on success
+        setRepromptIndex(null)
+        setRepromptTexts(prev => { const n = { ...prev }; delete n[goalIndex]; return n })
       }
     } catch (err) {
       setRedraftError(String(err))
@@ -1095,71 +1124,112 @@ function StepNextGoals({ form, update }: { form: FormData; update: (p: Partial<F
 
       {redraftError && (
         <div className="flex items-start gap-2 rounded-xl border border-red-800/40 bg-red-900/10 p-3 text-[11px] text-red-300">
-          <span className="flex-shrink-0 mt-px">⚠</span>
-          <span>{redraftError}</span>
+          <span className="flex-shrink-0 mt-px">⚠</span><span>{redraftError}</span>
         </div>
       )}
 
       {/* Goal cards */}
       <div className="space-y-4">
         {form.nextGoals.map((goal, i) => {
-          const isRedrafting = redraftingIndex === i
+          const isRedrafting   = redraftingIndex === i
+          const isRepromptOpen = repromptIndex === i
+          const repromptText   = repromptTexts[i] ?? ''
+
           return (
             <div
               key={i}
-              className={`p-4 rounded-xl border bg-[#0a0c14] space-y-3 transition-colors ${
-                isRedrafting ? 'border-purple-700/40' : 'border-[#1e2030]'
+              className={`rounded-xl border bg-[#0a0c14] overflow-hidden transition-colors ${
+                isRedrafting || isRepromptOpen ? 'border-purple-700/40' : 'border-[#1e2030]'
               }`}
             >
-              {/* Card header row */}
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
-                  Goal {i + 1}{i === 0 ? ' *' : ''}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => handleRedraft(i)}
-                  disabled={isRedrafting || drafting}
-                  title="Generate a different goal for this slot"
-                  className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-purple-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                >
-                  {isRedrafting
-                    ? <><Loader2 size={11} className="animate-spin" /> Regenerating…</>
-                    : <><RefreshCw size={11} /> Regenerate</>}
-                </button>
-              </div>
+              <div className="p-4 space-y-3">
+                {/* Card header */}
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+                    Goal {i + 1}{i === 0 ? ' *' : ''}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRepromptIndex(isRepromptOpen ? null : i)
+                      setRedraftError('')
+                    }}
+                    disabled={isRedrafting || drafting}
+                    className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-purple-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {isRepromptOpen
+                      ? <><X size={11} /> Cancel</>
+                      : <><RefreshCw size={11} /> Re-prompt</>}
+                  </button>
+                </div>
 
-              <div>
-                <Label>Goal Description</Label>
-                <TextArea
-                  value={goal.text}
-                  onChange={v => updateGoal(i, { text: v })}
-                  placeholder={i === 0 ? 'e.g. Improve video turnaround time to under 48 hours for standard projects by Q3' : 'Optional'}
-                  rows={3}
-                />
-              </div>
-              <div>
-                <Label>Target Completion Date</Label>
-                <div className="relative">
-                  <Input
-                    value={goal.targetDate}
-                    onChange={v => updateGoal(i, { targetDate: v })}
-                    placeholder={nextPeriodStart || 'e.g. May 2027'}
+                <div>
+                  <Label>Goal Description</Label>
+                  <TextArea
+                    value={goal.text}
+                    onChange={v => updateGoal(i, { text: v })}
+                    placeholder={i === 0 ? 'e.g. Improve video turnaround time to under 48 hours for standard projects by Q3' : 'Optional'}
+                    rows={3}
                   />
-                  {nextPeriodStart && !goal.targetDate && (
-                    <button
-                      type="button"
-                      onClick={() => updateGoal(i, { targetDate: nextPeriodStart })}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-purple-500 hover:text-purple-300 transition-colors"
-                    >
-                      Use {nextPeriodStart}
-                    </button>
+                </div>
+
+                <div>
+                  <Label>Target Completion Date</Label>
+                  <div className="relative">
+                    <Input
+                      value={goal.targetDate}
+                      onChange={v => updateGoal(i, { targetDate: v })}
+                      placeholder={nextAppraisalPeriod || 'e.g. 2026 – 2027'}
+                    />
+                    {nextAppraisalPeriod && !goal.targetDate && (
+                      <button
+                        type="button"
+                        onClick={() => updateGoal(i, { targetDate: nextAppraisalPeriod })}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-purple-500 hover:text-purple-300 transition-colors"
+                      >
+                        Use {nextAppraisalPeriod}
+                      </button>
+                    )}
+                  </div>
+                  {nextAppraisalPeriod && goal.targetDate === nextAppraisalPeriod && (
+                    <p className="mt-1 text-[10px] text-gray-600">📅 Auto-set to next appraisal period</p>
                   )}
                 </div>
-                {nextPeriodStart && goal.targetDate === nextPeriodStart && (
-                  <p className="mt-1 text-[10px] text-gray-600">📅 Auto-set from appraisal period</p>
-                )}
               </div>
+
+              {/* Re-prompt panel */}
+              {isRepromptOpen && (
+                <div className="border-t border-purple-800/30 bg-purple-900/10 px-4 py-3 space-y-2">
+                  <p className="text-[11px] text-purple-300/80">
+                    Describe what you want this goal to focus on — AI will regenerate it using your guidance.
+                  </p>
+                  <textarea
+                    value={repromptText}
+                    onChange={e => setRepromptTexts(prev => ({ ...prev, [i]: e.target.value }))}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && repromptText.trim()) {
+                        handleRedraft(i, repromptText)
+                      }
+                    }}
+                    placeholder='e.g. "focus on improving presentation skills" or "something around project deadline management"'
+                    rows={2}
+                    className="w-full bg-[#0a0c14] border border-purple-800/40 rounded-lg px-3 py-2 text-[12px] text-gray-200 placeholder-gray-700 focus:outline-none focus:border-purple-600/60 transition-colors resize-none"
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleRedraft(i, repromptText)}
+                      disabled={isRedrafting || !repromptText.trim()}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-800/80 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[11px] font-medium transition-colors"
+                    >
+                      {isRedrafting
+                        ? <><Loader2 size={11} className="animate-spin" /> Generating…</>
+                        : <><Sparkles size={11} /> Regenerate Goal {i + 1}</>}
+                    </button>
+                    <span className="text-[10px] text-gray-700">⌘↵ to submit</span>
+                  </div>
+                </div>
+              )}
             </div>
           )
         })}
