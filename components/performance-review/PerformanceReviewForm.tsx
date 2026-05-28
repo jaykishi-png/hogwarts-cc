@@ -1334,10 +1334,20 @@ export function PerformanceReviewForm() {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const reviewIdRef = useRef('')
 
-  // Init: generate a review ID and load history from localStorage
+  // Init: auto-resume the most recent save, or start fresh if nothing saved yet
   useEffect(() => {
-    reviewIdRef.current = crypto.randomUUID()
-    setSaves(getSaves())
+    const existing = getSaves()
+    if (existing.length > 0) {
+      // Saves are stored newest-first — pick the most recently modified
+      const latest = existing[0]
+      reviewIdRef.current = latest.id
+      setForm(latest.form)
+      setStep(latest.step)
+      setSaveStatus('saved')
+    } else {
+      reviewIdRef.current = crypto.randomUUID()
+    }
+    setSaves(existing)
   }, [])
 
   // Auto-save 1.5s after any form/step change (only once employee name is entered)
