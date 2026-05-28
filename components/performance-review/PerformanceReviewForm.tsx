@@ -1593,6 +1593,13 @@ export function PerformanceReviewForm() {
               )}
               <button
                 type="button"
+                onClick={handleNewReview}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-800/80 hover:bg-purple-700 text-[11px] text-white font-medium transition-colors"
+              >
+                + Create New
+              </button>
+              <button
+                type="button"
                 onClick={() => setShowHistory(true)}
                 className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#1e2030] bg-[#0d0f1a] text-[11px] text-gray-500 hover:text-gray-200 hover:border-[#2a2d3a] transition-all"
               >
