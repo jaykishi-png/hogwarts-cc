@@ -1459,17 +1459,19 @@ export function PerformanceReviewForm() {
             {STEPS.map((s, i) => (
               <button
                 key={s.id}
-                onClick={() => i < step && setStep(i)}
-                disabled={i > step}
+                type="button"
+                onClick={() => setStep(i)}
                 className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all ${
                   i === step
                     ? 'bg-purple-800/60 text-purple-200 border border-purple-700/50'
                     : i < step
-                    ? 'text-gray-400 hover:text-gray-200 cursor-pointer'
-                    : 'text-gray-700 cursor-default'
+                    ? 'text-gray-400 hover:text-gray-200 hover:bg-[#1e2030]'
+                    : 'text-gray-600 hover:text-gray-300 hover:bg-[#1e2030]'
                 }`}
               >
-                {i < step ? <CheckCircle2 size={11} className="text-emerald-500" /> : <span className="w-3.5 h-3.5 rounded-full border border-current flex items-center justify-center text-[9px]">{i + 1}</span>}
+                {i < step
+                  ? <CheckCircle2 size={11} className="text-emerald-500" />
+                  : <span className="w-3.5 h-3.5 rounded-full border border-current flex items-center justify-center text-[9px]">{i + 1}</span>}
                 {s.label}
               </button>
             ))}
