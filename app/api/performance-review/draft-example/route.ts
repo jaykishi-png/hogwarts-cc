@@ -19,26 +19,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'competency and context required' }, { status: 400 })
     }
 
-    const systemPrompt = `You are an expert HR performance review writer. Your only job is to take a manager's raw notes and turn them into one polished, specific, behavioral performance example. You MUST derive the example directly from the manager's notes — do not invent details, scenarios, or behaviors that the manager did not describe. If the manager mentions something specific (a project, a habit, a situation), that specific thing must appear in the example.`
+    const systemPrompt = `You are an expert HR performance review writer. Your job is to take a manager's raw notes and expand them into a polished, professional behavioral example for an annual performance review. Use the manager's notes as the foundation and anchor — then flesh out the detail with natural, professional HR language that makes the behavior vivid and credible. You may add reasonable, realistic context that is consistent with what the manager described, as long as it stays true to the spirit of their notes.`
 
     const distinctNote = exampleIndex > 0
-      ? `\n\nNOTE: This is example ${exampleIndex + 1} of 3. It must cover a different angle or situation than example 1 — stay grounded in the manager's notes but highlight a distinct aspect.`
+      ? `\n\nNOTE: This is example ${exampleIndex + 1} of 3. Highlight a different angle or aspect of the manager's notes than you would for example 1 — vary the situation or framing while staying true to the same core feedback.`
       : ''
 
-    const userPrompt = `COMPETENCY BEING EVALUATED: ${competency}
-EVALUATION DIRECTION: ${type === 'positive' ? 'POSITIVE STRENGTH — what they do well' : 'CONSTRUCTIVE AREA — where improvement is needed'}
+    const userPrompt = `COMPETENCY: ${competency}
+DIRECTION: ${type === 'positive' ? 'POSITIVE STRENGTH — what they do well' : 'CONSTRUCTIVE AREA — where improvement is needed'}
 EMPLOYEE: ${employeeName?.trim() || 'the employee'} (${role?.trim() || 'their role'})
 
-MANAGER'S NOTES (your primary source — the example must reflect this):
+MANAGER'S NOTES:
 """
 ${context.trim()}
 """${distinctNote}
 
-Using the manager's notes above as your source, write ONE polished behavioral example sentence for the "${competency}" competency section of a performance review.
+Write ONE polished behavioral example for the "${competency}" section of a performance review. Expand on the manager's notes with professional language — make the behavior specific, vivid, and credible. Do not just restate the notes verbatim; flesh them out into a complete, natural-sounding review sentence.
 
 Output rules:
-- 1–2 sentences only
-- Must directly reference what the manager described — no generic filler
+- 2–3 sentences
+- Grounded in the manager's notes, expanded with professional detail
 - Do NOT start with "The employee"
 - No bullets, numbers, quotes, or preamble
 - Return the example text only`
