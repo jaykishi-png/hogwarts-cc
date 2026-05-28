@@ -10,7 +10,7 @@ import {
   Cpu, Database, Bell, Palette, SlidersHorizontal, BookOpen,
   CheckCircle2, XCircle, Clock, BarChart2, Paperclip, Link2, X as XIcon, Plus,
   Wand2, Sparkles, Tag, Trash2, Brain, Mail, Calendar,
-  PlayCircle, BookMarked, Fish, Mic, MicOff, Download, BarChart,
+  PlayCircle, BookMarked, Fish, Mic, MicOff, Download, BarChart, ClipboardList,
 } from 'lucide-react'
 import { NavTabs } from './NavTabs'
 import VideoQCProcessor from './VideoQCProcessor'
@@ -213,6 +213,7 @@ function LeftToolbar({ active, setActive }: { active: string; setActive: (k: str
     { key: 'email-draft',  icon: Send,         label: 'Email Drafts' },
     { key: 'batch-hooks',  icon: Fish,         label: 'Batch Hooks' },
     { key: 'calendar',     icon: Calendar,     label: 'Content Calendar' },
+    { key: 'perf-review',  icon: ClipboardList,label: 'Performance Review' },
     null,
     { key: 'qc',           icon: Clapperboard, label: 'Video QC' },
     { key: 'transcribe',   icon: Mic,          label: 'Transcribe' },
@@ -243,6 +244,19 @@ function LeftToolbar({ active, setActive }: { active: string; setActive: (k: str
       {tools.map((t, i) =>
         t === null
           ? <div key={i} className="h-6 w-px bg-[#1e2030] mx-0.5 flex-shrink-0 md:h-px md:w-6 md:my-0.5 md:mx-0" />
+          : t.key === 'perf-review'
+          ? (
+            <a
+              key={t.key}
+              href="/performance-review"
+              target="_blank"
+              rel="noreferrer"
+              title={t.label}
+              className="w-9 h-8 flex items-center justify-center rounded-lg transition-all flex-shrink-0 text-gray-600 hover:text-purple-400 hover:bg-[#141824]"
+            >
+              <t.icon size={14} />
+            </a>
+          )
           : (
             <button
               key={t.key}
