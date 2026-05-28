@@ -276,9 +276,12 @@ function HistoryPanel({
           )}
 
           {saves.map(s => {
-            const isCurrent = s.id === currentId
-            const displayStep = s.maxStep ?? s.step
-            const progress = Math.round((displayStep / (STEPS.length - 1)) * 100)
+            const isCurrent   = s.id === currentId
+            // Count steps 0–7 that actually have user content
+            const CONTENT_STEPS = STEPS.length - 1 // 8 fillable steps (excludes Review Output)
+            const filledCount = Array.from({ length: CONTENT_STEPS }, (_, i) => i)
+              .filter(i => isStepComplete(i, s.form)).length
+            const progress = Math.round((filledCount / CONTENT_STEPS) * 100)
 
             return (
               <div
@@ -311,14 +314,14 @@ function HistoryPanel({
                     <Clock size={10} className="text-gray-700" />
                     <span className="text-[10px] text-gray-600">{relativeTime(s.savedAt)}</span>
                     <span className="text-gray-700">·</span>
-                    <span className="text-[10px] text-gray-600">Up to: {STEPS[displayStep]?.label ?? 'Complete'}</span>
+                    <span className="text-[10px] text-gray-600">{filledCount} / {CONTENT_STEPS} steps filled</span>
                   </div>
                 </div>
 
-                {/* Progress bar */}
+                {/* Progress bar — based on actual filled steps */}
                 <div className="h-1 bg-[#1e2030] rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-purple-700 rounded-full transition-all"
+                    className={`h-full rounded-full transition-all ${filledCount === CONTENT_STEPS ? 'bg-emerald-600' : 'bg-purple-700'}`}
                     style={{ width: `${progress}%` }}
                   />
                 </div>
@@ -1804,6 +1807,12 @@ export function PerformanceReviewForm() {
 
   const currentStep = STEPS[step]
 
+  // How many of the 8 content steps (0–7, excluding Review Output) are actually filled
+  const CONTENT_STEP_COUNT      = STEPS.length - 1 // 8
+  const filledStepsCount        = Array.from({ length: CONTENT_STEP_COUNT }, (_, i) => i)
+    .filter(i => isStepComplete(i, form)).length
+  const allContentStepsComplete = filledStepsCount === CONTENT_STEP_COUNT
+
   return (
     <div className="min-h-screen bg-[#0b0d14] text-white">
       {showHistory && (
@@ -1868,31 +1877,43 @@ export function PerformanceReviewForm() {
         {/* Step progress */}
         <div className="mb-8">
           <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none">
-            {STEPS.map((s, i) => (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => setStep(i)}
-                className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all ${
-                  i === step
-                    ? 'bg-purple-800/60 text-purple-200 border border-purple-700/50'
-                    : isStepComplete(i, form)
-                    ? 'text-gray-400 hover:text-gray-200 hover:bg-[#1e2030]'
-                    : 'text-gray-600 hover:text-gray-300 hover:bg-[#1e2030]'
-                }`}
-              >
-                {i !== step && isStepComplete(i, form)
-                  ? <CheckCircle2 size={11} className="text-emerald-500" />
-                  : <span className="w-3.5 h-3.5 rounded-full border border-current flex items-center justify-center text-[9px]">{i + 1}</span>}
-                {s.label}
-              </button>
-            ))}
+            {STEPS.map((s, i) => {
+              const isOutput   = i === STEPS.length - 1
+              const canAccess  = isOutput ? allContentStepsComplete : true
+              const isActive   = i === step
+              const isDone     = !isActive && isStepComplete(i, form)
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => canAccess && setStep(i)}
+                  disabled={!canAccess}
+                  title={isOutput && !canAccess ? 'Complete all steps before reviewing' : undefined}
+                  className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all ${
+                    isActive
+                      ? 'bg-purple-800/60 text-purple-200 border border-purple-700/50'
+                      : isOutput && !canAccess
+                      ? 'text-gray-700 cursor-not-allowed opacity-50'
+                      : isDone
+                      ? 'text-gray-400 hover:text-gray-200 hover:bg-[#1e2030]'
+                      : 'text-gray-600 hover:text-gray-300 hover:bg-[#1e2030]'
+                  }`}
+                >
+                  {!isActive && isDone
+                    ? <CheckCircle2 size={11} className="text-emerald-500" />
+                    : isOutput && !canAccess
+                    ? <span className="w-3.5 h-3.5 rounded-full border border-current flex items-center justify-center text-[9px]">🔒</span>
+                    : <span className="w-3.5 h-3.5 rounded-full border border-current flex items-center justify-center text-[9px]">{i + 1}</span>}
+                  {s.label}
+                </button>
+              )
+            })}
           </div>
-          {/* Progress bar — driven by maxStep so it never shrinks when navigating back */}
+          {/* Progress bar — driven by actual filled steps */}
           <div className="mt-2 h-0.5 bg-[#1e2030] rounded-full overflow-hidden">
             <div
-              className="h-full bg-purple-600 rounded-full transition-all duration-500"
-              style={{ width: `${(maxStep / (STEPS.length - 1)) * 100}%` }}
+              className={`h-full rounded-full transition-all duration-500 ${allContentStepsComplete ? 'bg-emerald-500' : 'bg-purple-600'}`}
+              style={{ width: `${(filledStepsCount / (STEPS.length - 1)) * 100}%` }}
             />
           </div>
         </div>
@@ -1919,24 +1940,32 @@ export function PerformanceReviewForm() {
 
         {/* Navigation */}
         {step < STEPS.length - 1 && (
-          <div className="flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => setStep(s => Math.max(0, s - 1))}
-              disabled={step === 0}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#1e2030] text-sm text-gray-400 hover:text-gray-200 hover:border-[#2a2d3a] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-            >
-              <ChevronLeft size={15} /> Back
-            </button>
-            <button
-              type="button"
-              onClick={() => setStep(s => Math.min(STEPS.length - 1, s + 1))}
-              disabled={!canProceed()}
-              className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-purple-800/80 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors"
-            >
-              {step === STEPS.length - 2 ? 'Generate Review' : 'Continue'}
-              <ChevronRight size={15} />
-            </button>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setStep(s => Math.max(0, s - 1))}
+                disabled={step === 0}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#1e2030] text-sm text-gray-400 hover:text-gray-200 hover:border-[#2a2d3a] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              >
+                <ChevronLeft size={15} /> Back
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep(s => Math.min(STEPS.length - 1, s + 1))}
+                disabled={step === STEPS.length - 2 ? !allContentStepsComplete : !canProceed()}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-purple-800/80 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors"
+              >
+                {step === STEPS.length - 2 ? 'Generate Review' : 'Continue'}
+                <ChevronRight size={15} />
+              </button>
+            </div>
+            {/* Incomplete warning shown only on last content step */}
+            {step === STEPS.length - 2 && !allContentStepsComplete && (
+              <p className="text-[11px] text-amber-500/80 text-right">
+                {CONTENT_STEP_COUNT - filledStepsCount} step{CONTENT_STEP_COUNT - filledStepsCount !== 1 ? 's' : ''} still need content before you can generate the review.
+              </p>
+            )}
           </div>
         )}
 
