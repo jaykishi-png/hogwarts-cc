@@ -106,7 +106,7 @@ const defaultForm = (): FormData => ({
   employeeDivision: '',
   supervisorName: '',
   appraisalPeriod: '',
-  reviewDate: new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+  reviewDate: '',
   competencyOne: emptyCompetency(),
   competencyTwo: emptyCompetency(),
   competencyThree: emptyCompetency(),
@@ -848,15 +848,15 @@ export function PerformanceReviewForm() {
     setForm(prev => ({ ...prev, ...patch }))
   }
 
-  const canProceed = () => {
+  const canProceed = (): boolean => {
     switch (step) {
-      case 0: return form.employeeName.trim() && form.supervisorName.trim()
-      case 1: return form.competencyOne.competency && form.competencyOne.examples[0].trim()
-      case 2: return form.competencyTwo.competency && form.competencyTwo.examples[0].trim()
-      case 3: return form.competencyThree.competency && form.competencyThree.examples[0].trim()
-      case 4: return form.competencyFour.competency && form.competencyFour.examples[0].trim()
-      case 5: return form.competencyFive.competency && form.competencyFive.examples[0].trim()
-      case 6: return form.goals.some(g => g.text.trim()) && form.overallScore > 0
+      case 0: return !!(form.employeeName.trim() && form.supervisorName.trim())
+      case 1: return !!(form.competencyOne.competency && form.competencyOne.examples[0].trim())
+      case 2: return !!(form.competencyTwo.competency && form.competencyTwo.examples[0].trim())
+      case 3: return !!(form.competencyThree.competency && form.competencyThree.examples[0].trim())
+      case 4: return !!(form.competencyFour.competency && form.competencyFour.examples[0].trim())
+      case 5: return !!(form.competencyFive.competency && form.competencyFive.examples[0].trim())
+      case 6: return !!(form.goals.some(g => g.text.trim()) && form.overallScore > 0)
       case 7: return form.nextGoals.some(g => g.text.trim())
       default: return true
     }
@@ -931,6 +931,7 @@ export function PerformanceReviewForm() {
         {step < STEPS.length - 1 && (
           <div className="flex items-center justify-between">
             <button
+              type="button"
               onClick={() => setStep(s => Math.max(0, s - 1))}
               disabled={step === 0}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#1e2030] text-sm text-gray-400 hover:text-gray-200 hover:border-[#2a2d3a] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
@@ -938,6 +939,7 @@ export function PerformanceReviewForm() {
               <ChevronLeft size={15} /> Back
             </button>
             <button
+              type="button"
               onClick={() => setStep(s => Math.min(STEPS.length - 1, s + 1))}
               disabled={!canProceed()}
               className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-purple-800/80 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors"
@@ -951,12 +953,14 @@ export function PerformanceReviewForm() {
         {step === STEPS.length - 1 && (
           <div className="flex items-center justify-between">
             <button
+              type="button"
               onClick={() => setStep(s => s - 1)}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#1e2030] text-sm text-gray-400 hover:text-gray-200 hover:border-[#2a2d3a] transition-all"
             >
               <ChevronLeft size={15} /> Back
             </button>
             <button
+              type="button"
               onClick={() => { setForm(defaultForm()); setStep(0) }}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#1e2030] text-sm text-gray-400 hover:text-red-400 hover:border-red-800/50 transition-all"
             >
