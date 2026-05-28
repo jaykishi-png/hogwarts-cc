@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Copy, CheckCircle2, ChevronRight, ChevronLeft, Sparkles, Loader2, Star } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Copy, CheckCircle2, ChevronRight, ChevronLeft, Sparkles, Loader2, Star, History, X, Clock } from 'lucide-react'
 
 // ─── Competency glossary ──────────────────────────────────────────────────────
 
@@ -132,6 +132,196 @@ const STEPS = [
   { id: 'nextgoals', label: "Next Year's Goals",  part: 'PART THREE' },
   { id: 'output',    label: 'Review Output',      part: null },
 ]
+
+// ─── Save / load ─────────────────────────────────────────────────────────────
+
+interface SavedReview {
+  id: string
+  employeeName: string
+  employeePosition: string
+  step: number
+  savedAt: string   // ISO timestamp
+  form: FormData
+}
+
+const SAVES_KEY = 'manager-perf-review-saves'
+
+function getSaves(): SavedReview[] {
+  try { return JSON.parse(localStorage.getItem(SAVES_KEY) ?? '[]') }
+  catch { return [] }
+}
+
+function upsertSave(review: SavedReview): void {
+  const saves = getSaves()
+  const idx = saves.findIndex(s => s.id === review.id)
+  if (idx >= 0) saves[idx] = review
+  else saves.unshift(review)
+  localStorage.setItem(SAVES_KEY, JSON.stringify(saves.slice(0, 20)))
+}
+
+function deleteSave(id: string): void {
+  localStorage.setItem(SAVES_KEY, JSON.stringify(getSaves().filter(s => s.id !== id)))
+}
+
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  return `${Math.floor(hrs / 24)}d ago`
+}
+
+// ─── History panel ────────────────────────────────────────────────────────────
+
+function HistoryPanel({
+  saves,
+  currentId,
+  onLoad,
+  onDelete,
+  onClose,
+}: {
+  saves: SavedReview[]
+  currentId: string
+  onLoad: (s: SavedReview) => void
+  onDelete: (id: string) => void
+  onClose: () => void
+}) {
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+
+      {/* Drawer */}
+      <div className="relative w-full max-w-sm bg-[#0b0d14] border-l border-[#1e2030] flex flex-col h-full shadow-2xl">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#1e2030] flex-shrink-0">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-100 flex items-center gap-2">
+              <History size={14} className="text-purple-400" /> Saved Reviews
+            </h2>
+            <p className="text-[11px] text-gray-600 mt-0.5">
+              {saves.length === 0 ? 'No saves yet' : `${saves.length} review${saves.length !== 1 ? 's' : ''} · auto-saved to this browser`}
+            </p>
+          </div>
+          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-600 hover:text-gray-300 hover:bg-[#1e2030] transition-all">
+            <X size={15} />
+          </button>
+        </div>
+
+        {/* List */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-2
+          [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-track]:bg-transparent
+          [&::-webkit-scrollbar-thumb]:bg-[#2a2d3a] [&::-webkit-scrollbar-thumb]:rounded-full">
+
+          {saves.length === 0 && (
+            <div className="text-center py-16">
+              <p className="text-3xl mb-3">📋</p>
+              <p className="text-sm text-gray-500">No saved reviews yet</p>
+              <p className="text-[11px] text-gray-700 mt-1.5 max-w-[200px] mx-auto leading-relaxed">
+                Reviews auto-save once you enter the employee&apos;s name
+              </p>
+            </div>
+          )}
+
+          {saves.map(s => {
+            const isCurrent = s.id === currentId
+            const progress = Math.round((s.step / (STEPS.length - 1)) * 100)
+
+            return (
+              <div
+                key={s.id}
+                className={`rounded-xl border p-4 space-y-3 transition-colors ${
+                  isCurrent
+                    ? 'border-purple-700/50 bg-purple-900/10'
+                    : 'border-[#1e2030] bg-[#0d0f1a]'
+                }`}
+              >
+                {/* Name + meta */}
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm font-medium text-gray-200 leading-snug">
+                      {s.employeeName || 'Untitled Review'}
+                      {isCurrent && (
+                        <span className="ml-2 text-[9px] font-semibold px-1.5 py-0.5 rounded bg-purple-900/40 text-purple-400 uppercase tracking-wider">
+                          current
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  {s.employeePosition && (
+                    <p className="text-[11px] text-gray-500 mt-0.5">{s.employeePosition}</p>
+                  )}
+                  <div className="flex items-center gap-2 mt-2">
+                    <Clock size={10} className="text-gray-700" />
+                    <span className="text-[10px] text-gray-600">{relativeTime(s.savedAt)}</span>
+                    <span className="text-gray-700">·</span>
+                    <span className="text-[10px] text-gray-600">{STEPS[s.step]?.label ?? 'Complete'}</span>
+                  </div>
+                </div>
+
+                {/* Progress bar */}
+                <div className="h-1 bg-[#1e2030] rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-purple-700 rounded-full transition-all"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+
+                {/* Actions */}
+                {confirmDelete === s.id ? (
+                  <div className="flex items-center gap-2">
+                    <p className="flex-1 text-[11px] text-red-400">Delete this save?</p>
+                    <button
+                      onClick={() => { onDelete(s.id); setConfirmDelete(null) }}
+                      className="px-2.5 py-1 rounded-lg bg-red-900/40 text-red-400 text-[11px] font-medium hover:bg-red-900/60 transition-colors"
+                    >
+                      Delete
+                    </button>
+                    <button
+                      onClick={() => setConfirmDelete(null)}
+                      className="px-2.5 py-1 rounded-lg border border-[#2a2d3a] text-[11px] text-gray-500 hover:text-gray-300 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    {!isCurrent && (
+                      <button
+                        onClick={() => onLoad(s)}
+                        className="flex-1 py-1.5 rounded-lg bg-purple-800/70 hover:bg-purple-700 text-white text-[11px] font-medium transition-colors"
+                      >
+                        Resume
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setConfirmDelete(s.id)}
+                      className={`${isCurrent ? 'flex-1' : ''} px-3 py-1.5 rounded-lg border border-[#2a2d3a] text-[11px] text-gray-600 hover:text-red-400 hover:border-red-800/50 transition-colors`}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Footer */}
+        <div className="flex-shrink-0 px-4 py-3 border-t border-[#1e2030]">
+          <p className="text-[10px] text-gray-700 text-center leading-relaxed">
+            Saved locally to this browser · cleared if browser data is wiped
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 // ─── Small components ─────────────────────────────────────────────────────────
 
@@ -843,6 +1033,55 @@ function OutputBlock({
 export function PerformanceReviewForm() {
   const [step, setStep] = useState(0)
   const [form, setForm] = useState<FormData>(defaultForm())
+  const [saves, setSaves] = useState<SavedReview[]>([])
+  const [showHistory, setShowHistory] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const reviewIdRef = useRef('')
+
+  // Init: generate a review ID and load history from localStorage
+  useEffect(() => {
+    reviewIdRef.current = crypto.randomUUID()
+    setSaves(getSaves())
+  }, [])
+
+  // Auto-save 1.5s after any form/step change (only once employee name is entered)
+  useEffect(() => {
+    if (!form.employeeName.trim()) return
+    setSaveStatus('saving')
+    const timer = setTimeout(() => {
+      upsertSave({
+        id: reviewIdRef.current,
+        employeeName: form.employeeName,
+        employeePosition: form.employeePosition,
+        step,
+        savedAt: new Date().toISOString(),
+        form,
+      })
+      setSaves(getSaves())
+      setSaveStatus('saved')
+    }, 1500)
+    return () => clearTimeout(timer)
+  }, [form, step])
+
+  function handleLoad(save: SavedReview) {
+    reviewIdRef.current = save.id
+    setForm(save.form)
+    setStep(save.step)
+    setShowHistory(false)
+    setSaveStatus('saved')
+  }
+
+  function handleDelete(id: string) {
+    deleteSave(id)
+    setSaves(getSaves())
+  }
+
+  function handleNewReview() {
+    reviewIdRef.current = crypto.randomUUID()
+    setForm(defaultForm())
+    setStep(0)
+    setSaveStatus('idle')
+  }
 
   function update(patch: Partial<FormData>) {
     setForm(prev => ({ ...prev, ...patch }))
@@ -866,15 +1105,56 @@ export function PerformanceReviewForm() {
 
   return (
     <div className="min-h-screen bg-[#0b0d14] text-white">
+      {showHistory && (
+        <HistoryPanel
+          saves={saves}
+          currentId={reviewIdRef.current}
+          onLoad={handleLoad}
+          onDelete={handleDelete}
+          onClose={() => setShowHistory(false)}
+        />
+      )}
+
       <div className="max-w-2xl mx-auto px-4 py-8">
 
         {/* Header */}
         <div className="mb-8">
-          <div className="flex items-center gap-3 mb-1">
-            <span className="text-2xl">📋</span>
-            <h1 className="text-xl font-bold text-gray-100">Manager Performance Review</h1>
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">📋</span>
+              <div>
+                <h1 className="text-xl font-bold text-gray-100">Manager Performance Review</h1>
+                <p className="text-[12px] text-gray-500 mt-0.5">Fill out each section — copy individual parts or the full review at the end.</p>
+              </div>
+            </div>
+
+            {/* Save status + history */}
+            <div className="flex items-center gap-2 flex-shrink-0 pt-1">
+              {saveStatus === 'saving' && (
+                <span className="text-[10px] text-gray-600 flex items-center gap-1">
+                  <Loader2 size={10} className="animate-spin" /> Saving…
+                </span>
+              )}
+              {saveStatus === 'saved' && (
+                <span className="text-[10px] text-emerald-600 flex items-center gap-1">
+                  <CheckCircle2 size={10} /> Saved
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowHistory(true)}
+                className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#1e2030] bg-[#0d0f1a] text-[11px] text-gray-500 hover:text-gray-200 hover:border-[#2a2d3a] transition-all"
+              >
+                <History size={12} />
+                History
+                {saves.length > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-purple-700 text-[9px] font-bold text-white flex items-center justify-center">
+                    {saves.length > 9 ? '9+' : saves.length}
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
-          <p className="text-[12px] text-gray-500 ml-9">Fill out each section — copy individual parts or the full review at the end.</p>
         </div>
 
         {/* Step progress */}
@@ -961,7 +1241,7 @@ export function PerformanceReviewForm() {
             </button>
             <button
               type="button"
-              onClick={() => { setForm(defaultForm()); setStep(0) }}
+              onClick={handleNewReview}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#1e2030] text-sm text-gray-400 hover:text-red-400 hover:border-red-800/50 transition-all"
             >
               Start New Review
