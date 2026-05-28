@@ -256,6 +256,9 @@ function HistoryPanel({
                   {s.employeePosition && (
                     <p className="text-[11px] text-gray-500 mt-0.5">{s.employeePosition}</p>
                   )}
+                  {s.form.appraisalPeriod && (
+                    <p className="text-[11px] text-purple-400/70 mt-0.5">📅 {s.form.appraisalPeriod}</p>
+                  )}
                   <div className="flex items-center gap-2 mt-2">
                     <Clock size={10} className="text-gray-700" />
                     <span className="text-[10px] text-gray-600">{relativeTime(s.savedAt)}</span>
