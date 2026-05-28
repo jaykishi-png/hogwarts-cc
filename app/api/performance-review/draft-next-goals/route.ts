@@ -22,43 +22,56 @@ export async function POST(req: NextRequest) {
 
     const targetDate = nextPeriodStart || 'end of next review period'
 
-    const competencyBlock = competencies.length
-      ? competencies.map(c =>
-          `${c.competency} [${c.type.toUpperCase()}]:\n${
-            c.examples.filter(e => e.trim()).map(e => `  • ${e}`).join('\n') || '  • (no examples recorded)'
-          }`
-        ).join('\n\n')
-      : '(no competencies recorded)'
+    // Split competencies into constructive vs positive for emphasis
+    const constructive = competencies.filter(c => c.type === 'constructive')
+    const positive     = competencies.filter(c => c.type === 'positive')
+
+    const formatComp = (c: { competency: string; examples: string[] }) =>
+      `  ${c.competency}:\n${
+        c.examples.filter(e => e.trim()).map(e => `    • ${e}`).join('\n') || '    • (no examples recorded)'
+      }`
+
+    const constructiveBlock = constructive.length
+      ? constructive.map(formatComp).join('\n\n')
+      : '  (none recorded)'
+
+    const positiveBlock = positive.length
+      ? positive.map(formatComp).join('\n\n')
+      : '  (none recorded)'
 
     const goalsBlock = goals.length
       ? goals.map(g =>
-          `• [${(g.status || 'not marked').toUpperCase()}] ${g.text}${g.explanation ? `\n  → ${g.explanation}` : ''}`
+          `  • [${(g.status || 'not marked').toUpperCase()}] ${g.text}${g.explanation ? `\n    → ${g.explanation}` : ''}`
         ).join('\n')
-      : '(no goals recorded)'
+      : '  (no goals recorded)'
 
-    const systemPrompt = `You are an expert HR performance coach and review writer. You analyze an employee's annual performance review and generate specific, practical, SMART goals for the next review period. Your goals directly address developmental areas, carry forward unfinished work, and build on strengths. Return only valid JSON — no markdown, no code fences, no explanation.`
+    const systemPrompt = `You are an expert HR performance coach. You turn an employee's constructive competency feedback directly into specific, actionable SMART goals for their next review period. The constructive areas are your PRIMARY source — each goal should directly address a gap or improvement area identified there. Return only valid JSON — no markdown, no code fences, no explanation.`
 
-    const userPrompt = `Analyze the following annual performance review and generate 2–3 SMART goals for the next review period.
+    const userPrompt = `Generate 2–3 SMART goals for the next review period based on this annual performance review.
 
 EMPLOYEE: ${employeeName || 'the employee'} — ${role || 'their role'}
 CURRENT PERIOD: ${appraisalPeriod || 'not specified'}
-NEXT PERIOD TARGET DATE: ${targetDate}
+TARGET DATE: ${targetDate}
 
-─── COMPETENCY EVALUATIONS ───
-${competencyBlock}
+━━━ CONSTRUCTIVE AREAS (PRIMARY SOURCE — base goals directly on these) ━━━
+${constructiveBlock}
 
-─── THIS YEAR'S GOALS ───
+━━━ POSITIVE STRENGTHS (reference only — use to frame one stretch goal) ━━━
+${positiveBlock}
+
+━━━ THIS YEAR'S GOALS ━━━
 ${goalsBlock}
 
-─── OVERALL ───
-Score: ${overallScore > 0 ? `${overallScore}/5` : 'not scored'}${overallSummary ? `\nNotes: ${overallSummary}` : ''}
+━━━ OVERALL SCORE ━━━
+${overallScore > 0 ? `${overallScore}/5` : 'not scored'}${overallSummary ? ` — ${overallSummary}` : ''}
 
-Instructions:
-1. Prioritize CONSTRUCTIVE competency areas — turn each developmental gap into a concrete, measurable goal
-2. Carry forward UNSUCCESSFUL or ONGOING goals (reframe/refine as needed, don't just copy verbatim)
-3. Add at least one growth goal that builds on a POSITIVE strength
-4. Each goal must be specific enough that success is clearly measurable
-5. Set targetDate to "${targetDate}" for all goals unless a different date makes more sense
+Rules:
+1. EACH constructive competency area must produce at least one goal — these are non-negotiable
+2. Goals must directly name the specific competency gap (e.g. "improve X by doing Y") — not vague intentions
+3. Carry forward any UNSUCCESSFUL or ONGOING goals from this year, reframed with a clear success metric
+4. You may add ONE goal that leverages a positive strength into new responsibility — only if all constructive areas are already covered
+5. Every goal must be specific and measurable enough that success is obvious at review time
+6. Set targetDate to "${targetDate}" for all goals
 
 Return ONLY this JSON array (2–3 items), no other text:
 [

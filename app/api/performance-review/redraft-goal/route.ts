@@ -25,49 +25,51 @@ export async function POST(req: NextRequest) {
 
     const targetDate = nextPeriodStart || 'end of next review period'
 
-    const competencyBlock = competencies.length
-      ? competencies.map(c =>
-          `${c.competency} [${c.type.toUpperCase()}]: ${
-            c.examples.filter(e => e.trim()).join('; ') || '(no examples)'
-          }`
-        ).join('\n')
-      : '(none recorded)'
+    const constructive = competencies.filter(c => c.type === 'constructive')
+    const positive     = competencies.filter(c => c.type === 'positive')
+
+    const formatComp = (c: { competency: string; examples: string[] }) =>
+      `  ${c.competency}: ${c.examples.filter(e => e.trim()).join('; ') || '(no examples)'}`
+
+    const constructiveBlock = constructive.length ? constructive.map(formatComp).join('\n') : '  (none recorded)'
+    const positiveBlock     = positive.length     ? positive.map(formatComp).join('\n')     : '  (none recorded)'
 
     const goalsBlock = goals.length
-      ? goals.map(g => `• [${(g.status || 'unmarked').toUpperCase()}] ${g.text}`).join('\n')
-      : '(none recorded)'
+      ? goals.map(g => `  • [${(g.status || 'unmarked').toUpperCase()}] ${g.text}`).join('\n')
+      : '  (none recorded)'
 
     const existingBlock = existingGoals
       .filter((g, i) => i !== goalIndex && g.text.trim())
-      .map((g, i) => `• ${g.text}`)
-      .join('\n') || '(none yet)'
+      .map(g => `  • ${g.text}`)
+      .join('\n') || '  (none yet)'
 
     const slotLabel = goalIndex === 0 ? 'primary' : goalIndex === 1 ? 'secondary' : 'third'
 
-    const systemPrompt = `You are an expert HR performance coach. You generate a single specific, measurable SMART goal for an employee's next annual review period. Return only valid JSON — no markdown, no explanation.`
+    const systemPrompt = `You are an expert HR performance coach. You generate a single specific, measurable SMART goal for an employee's next annual review period. Goals must be rooted in the constructive competency feedback — that is the primary source. Return only valid JSON — no markdown, no explanation.`
 
-    const userPrompt = `Generate ONE alternative SMART goal for goal slot ${goalIndex + 1} (the ${slotLabel} goal) of an employee's next review period.
+    const userPrompt = `Generate ONE alternative SMART goal for goal slot ${goalIndex + 1} (the ${slotLabel} goal).
 
 EMPLOYEE: ${employeeName || 'the employee'} — ${role || 'their role'}
 REVIEW PERIOD: ${appraisalPeriod || 'not specified'}
 TARGET DATE: ${targetDate}
 
-─── COMPETENCY EVALUATIONS ───
-${competencyBlock}
+━━━ CONSTRUCTIVE AREAS (PRIMARY SOURCE — goal must address one of these) ━━━
+${constructiveBlock}
 
-─── THIS YEAR'S GOALS (outcomes) ───
+━━━ POSITIVE STRENGTHS (secondary reference only) ━━━
+${positiveBlock}
+
+━━━ THIS YEAR'S GOALS (outcomes) ━━━
 ${goalsBlock}
 
-─── OVERALL SCORE ───
-${overallScore > 0 ? `${overallScore}/5` : 'not scored'}${overallSummary ? ` — ${overallSummary}` : ''}
-
-─── ALREADY DRAFTED GOALS (make this one DIFFERENT) ───
+━━━ ALREADY DRAFTED GOALS (make this one DIFFERENT in theme and focus) ━━━
 ${existingBlock}
 
-Instructions:
-- Generate exactly ONE goal, different in theme and focus from the already-drafted goals above
-- Make it specific, measurable, and actionable for this employee's role
-- Directly address a gap or opportunity visible in the competency evaluations or this year's outcomes
+Rules:
+- Root the goal in a CONSTRUCTIVE competency area not already covered by the drafted goals above
+- If all constructive areas are covered, use a positive strength to frame a stretch goal
+- Must be specific and measurable — success should be objectively verifiable
+- Different in theme/focus from every already-drafted goal
 - Set targetDate to "${targetDate}"
 
 Return ONLY this JSON object, no other text:
