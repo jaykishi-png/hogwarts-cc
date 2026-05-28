@@ -1639,14 +1639,14 @@ function StepOutput({ form }: { form: FormData }) {
               onClick={handleSendToDrive}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[13px] font-semibold transition-colors shrink-0"
             >
-              {/* Google Drive icon */}
-              <svg className="w-4 h-4" viewBox="0 0 87.3 78" fill="currentColor">
-                <path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0a15.4 15.4 0 003.3 8.5l3.3 5.35z" fill="#0066da"/>
-                <path d="M43.65 25L29.9 1.2a15.4 15.4 0 00-3.3 3.3L.95 50.3a15.4 15.4 0 00-1 5.35h27.5L43.65 25z" fill="#00ac47"/>
-                <path d="M73.55 76.8a15.4 15.4 0 003.3-3.3l1.6-2.75 7.65-13.2a15.4 15.4 0 001-5.35H59.6l5.85 11.5 8.1 13.1z" fill="#ea4335"/>
-                <path d="M43.65 25L57.4 1.2a15.4 15.4 0 00-8.35-1.2H38.3a15.4 15.4 0 00-8.4 1.2L43.65 25z" fill="#00832d"/>
-                <path d="M59.6 55.65h27.5a15.4 15.4 0 00-1-5.35L62.85 8.5A15.4 15.4 0 0059.55 5.2L43.65 25l15.95 30.65z" fill="#2684fc"/>
-                <path d="M43.65 25L27.5 55.65H59.6L43.65 25z" fill="#00ac47"/>
+              {/* Google Drive logo */}
+              <svg className="w-4 h-4" viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg">
+                <path fill="#0066da" d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0a15.4 15.4 0 003.3 8.5z"/>
+                <path fill="#00ac47" d="M43.65 25L29.9 1.2a15.4 15.4 0 00-3.3 3.3L.95 50.3A15.4 15.4 0 000 55.65h27.5z"/>
+                <path fill="#ea4335" d="M73.55 76.8a15.4 15.4 0 003.3-3.3l1.6-2.75 7.65-13.2a15.4 15.4 0 001-5.35H59.6l5.85 11.5z"/>
+                <path fill="#00832d" d="M43.65 25L57.4 1.2a15.4 15.4 0 00-8.35-1.2H38.3a15.4 15.4 0 00-8.4 1.2z"/>
+                <path fill="#2684fc" d="M59.6 55.65h27.5a15.4 15.4 0 00-1-5.35L62.85 8.5A15.4 15.4 0 0059.55 5.2L43.65 25z"/>
+                <path fill="#00ac47" d="M43.65 25L27.5 55.65H59.6z"/>
               </svg>
               Approve &amp; Send to Drive
             </button>
