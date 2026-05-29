@@ -248,7 +248,7 @@ function LeftToolbar({ active, setActive }: { active: string; setActive: (k: str
           ? (
             <a
               key={t.key}
-              href="/performance-review"
+              href="https://performance-review-app-git-main-automation-7724s-projects.vercel.app"
               target="_blank"
               rel="noreferrer"
               title={t.label}
